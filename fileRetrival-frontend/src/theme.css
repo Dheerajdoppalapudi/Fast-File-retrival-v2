@@ -1,0 +1,63 @@
+/* Global theme styles */
+.dark-theme {
+    background-color: #202021;
+    color: rgba(255, 255, 255, 0.85);
+  }
+  
+  .light-theme {
+    background-color: #ffffff;
+    color: rgba(0, 0, 0, 0.85);
+  }
+  
+  /* Custom styles for dark mode */
+  .dark-theme .app-container {
+    background-color: #202021;
+    color: rgba(255, 255, 255, 0.85);
+  }
+  
+  .dark-theme .ant-layout {
+    background-color: #202021;
+  }
+  
+  .dark-theme .ant-layout-header {
+    background-color: #313130;
+    border-bottom: 1px solid #414140;
+  }
+  
+  .dark-theme .ant-layout-footer {
+    background-color: #313130;
+    color: rgba(255, 255, 255, 0.65);
+    border-top: 1px solid #414140;
+  }
+  
+  .dark-theme .ant-menu-horizontal {
+    border-bottom: none;
+  }
+  
+  /* Additional styles for better card, form, and button visibility in dark mode */
+  .dark-theme .ant-card {
+    background-color: #313130;
+    border-color: #414140;
+  }
+  
+  .dark-theme .ant-form-item-label > label {
+    color: rgba(255, 255, 255, 0.85);
+  }
+  
+  /* Custom scrollbar for dark mode */
+  .dark-theme::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  .dark-theme::-webkit-scrollbar-track {
+    background: #202021;
+  }
+  
+  .dark-theme::-webkit-scrollbar-thumb {
+    background-color: #414140;
+    border-radius: 4px;
+  }
+  
+  .dark-theme::-webkit-scrollbar-thumb:hover {
+    background-color: #1890ff;
+  }

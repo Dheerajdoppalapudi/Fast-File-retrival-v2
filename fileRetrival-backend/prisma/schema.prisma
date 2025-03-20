@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PermissionType {
+  READ
+  WRITE
+}
+
+enum ResourceType {
+  FILE
+  DIRECTORY
+}
+
+model User {
+  id              String       @id @default(uuid())
+  username        String       @unique
+  email           String?      @unique
+  password        String
+  role            Role
+  files           File[]       @relation("FileCreator")
+  approvals       Approval[]   @relation("ApprovalApprover")
+  approvedVersions Version[]   @relation("VersionApprover")
+  approvedFiles   File[]       @relation("FileApprover")
+  createdVersions Version[]    @relation("VersionCreator")
+  
+  // Directory relations
+  createdDirectories Directory[] @relation("DirectoryCreator")
+  
+  // Permission relations
+  givenPermissions Permission[] @relation("PermissionGranter")
+  permissions      Permission[] @relation("PermissionUser")
+}
+
+model Directory {
+  id        String      @id @default(uuid())
+  name      String
+  parentId  String? 
+  parent    Directory?  @relation("ParentChild", fields: [parentId], references: [id])
+  children  Directory[] @relation("ParentChild")
+  createdAt DateTime    @default(now())
+  
+  // Update the createdBy field to be a proper relation
+  createdBy String?
+  creator   User?       @relation("DirectoryCreator", fields: [createdBy], references: [id])
+  
+  // Relation to permissions
+  permissions Permission[] @relation("DirectoryPermissions")
+}
+
+model File {
+  id             String         @id @default(uuid())
+  name           String
+  path           String         @unique
+  directory      String
+  createdAt      DateTime       @default(now())
+  createdBy      String
+  creator        User           @relation(name: "FileCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  versions       Version[]
+  approvalStatus ApprovalStatus @default(PENDING)
+  approvedBy     String?
+  approver       User?          @relation(name: "FileApprover", fields: [approvedBy], references: [id], onDelete: SetNull)
+  approval       Approval?
+  
+  // Relation to permissions
+  permissions    Permission[]   @relation("FilePermissions")
+}
+
+model Version {
+  id            String   @id @default(uuid())
+  fileId        String
+  filePath      String
+  versionNumber Int
+  createdAt     DateTime @default(now())
+
+  createdBy     String
+  creator       User     @relation(name: "VersionCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  file          File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  approvedBy    String?
+  approver      User?    @relation(name: "VersionApprover", fields: [approvedBy], references: [id], onDelete: SetNull)
+}
+
+model Approval {
+  id         String    @id @default(uuid())
+  fileId     String    @unique
+  file       File      @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  approvedBy String? 
+  approver   User?     @relation(name: "ApprovalApprover", fields: [approvedBy], references: [id], onDelete: SetNull)
+
+  approvedAt DateTime?
+}
+
+model Permission {
+  id            String         @id @default(uuid())
+  permissionType PermissionType
+  resourceType   ResourceType
+  
+  // User who has this permission
+  userId        String
+  user          User           @relation(name: "PermissionUser", fields: [userId], references: [id], onDelete: Cascade)
+  
+  // User who granted this permission
+  grantedBy     String?
+  granter       User?          @relation(name: "PermissionGranter", fields: [grantedBy], references: [id], onDelete: SetNull)
+  
+  // Resource this permission applies to (either file or directory)
+  fileId        String?
+  file          File?          @relation(name: "FilePermissions", fields: [fileId], references: [id], onDelete: Cascade)
+  
+  directoryId   String?
+  directory     Directory?     @relation(name: "DirectoryPermissions", fields: [directoryId], references: [id], onDelete: Cascade)
+  
+  // Whether this permission should cascade to children (only applies to directories)
+  cascadeToChildren Boolean     @default(true)
+  
+  createdAt     DateTime       @default(now())
+  
+  @@unique([userId, resourceType, fileId]) // For FILE permissions
+  @@unique([userId, resourceType, directoryId]) // For DIRECTORY permissions
+  @@index([userId, resourceType])
+  @@index([fileId])
+  @@index([directoryId])
+}

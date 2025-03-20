@@ -1,0 +1,3 @@
+1. Fix the upload error once a file is approved and the same file gets again uploaded then its not going for the approval!
+    1.1 redesign the DB is needed
+
