@@ -21,7 +21,8 @@ import {
   InfoCircleOutlined,
   MoreOutlined,
   ShareAltOutlined,
-  EditOutlined
+  EditOutlined,
+  ClockCircleFilled
 } from "@ant-design/icons";
 import VersionsList from "./VersionsList";
 import CompareModal from "./CompareModal";
@@ -117,9 +118,16 @@ const FileItem = ({
   const [showDetails, setShowDetails] = useState(false);
   const [shareModalVisible, setShareModalVisible] = useState(false);
 
-  // Determine if file should be displayed based on approval status
+  // Determine if current user is the file creator
+  const isCreator = content?.uploadedBy?.id === user?.userId || content?.createdBy === user?.userId;
+  
+  // Updated visibility logic:
+  // 1. Show if file is APPROVED (everyone can see)
+  // 2. Show if user is ADMIN (admins see everything)
+  // 3. Show if file is PENDING and current user is the creator
   const isApproved = content?.approvalStatus === "APPROVED";
-  const shouldDisplay = isAdmin || isApproved;
+  const isPending = content?.approvalStatus === "PENDING";
+  const shouldDisplay = isApproved || isAdmin || (isPending && isCreator);
 
   // If file shouldn't be displayed, return null (don't render anything)
   if (!shouldDisplay) {
@@ -148,11 +156,47 @@ const FileItem = ({
         </Tag>
       );
     } else if (status === "REJECTED") {
-      return <Tag color="error" style={{ fontSize: '11px', padding: '0 6px', marginLeft: '4px' }}>Rejected</Tag>;
+      return (
+        <Tag color="error" style={{ fontSize: '11px', padding: '0 6px', marginLeft: '4px' }}>
+          <DeleteOutlined style={{ fontSize: '10px', marginRight: '4px' }} />
+          Rejected
+        </Tag>
+      );
     } else if (status === "PENDING") {
-      return <Tag color="warning" style={{ fontSize: '11px', padding: '0 6px', marginLeft: '4px' }}>Pending</Tag>;
+      return (
+        <Tag color="warning" style={{ fontSize: '11px', padding: '0 6px', marginLeft: '4px' }}>
+          <ClockCircleFilled style={{ fontSize: '10px', marginRight: '4px' }} />
+          Pending
+        </Tag>
+      );
     }
     return null;
+  };
+
+  // Handle Share Click with proper event prevention
+  const handleShareClick = (e) => {
+    // Make sure to stop event propagation to prevent file from opening
+    if (e && e.domEvent) {
+      e.domEvent.stopPropagation(); 
+    }
+    setShareModalVisible(true);
+  };
+
+  // Handle Rename Click with proper event prevention
+  const handleRenameClick = (e) => {
+    if (e && e.domEvent) {
+      e.domEvent.stopPropagation();
+    }
+    console.log("Rename clicked for:", name);
+    // Open rename modal here
+  };
+
+  // Handle Delete Click with proper event prevention
+  const handleDeleteClick = (e) => {
+    if (e && e.domEvent) {
+      e.domEvent.stopPropagation();
+    }
+    onDelete();
   };
 
   // Dropdown menu items for the three dots
@@ -162,27 +206,20 @@ const FileItem = ({
         key: 'share',
         icon: <ShareAltOutlined />,
         label: 'Share',
-        onClick: () => {
-          setShareModalVisible(true);
-        }
+        onClick: handleShareClick
       },
       {
         key: 'rename',
         icon: <EditOutlined />,
         label: 'Rename',
-        onClick: () => {
-          console.log("Rename clicked for:", name);
-          // Open rename modal here
-        }
+        onClick: handleRenameClick
       },
-      ...(isAdmin ? [{
+      ...(isAdmin || isCreator ? [{
         key: 'delete',
         icon: <DeleteOutlined />,
         label: 'Delete',
         danger: true,
-        onClick: () => {
-          onDelete();
-        }
+        onClick: handleDeleteClick
       }] : [])
     ]
   };
@@ -203,6 +240,8 @@ const FileItem = ({
           marginBottom: "8px",
           borderBottom: darkMode ? '1px solid #1f1f1f' : '1px solid #f5f5f5',
           boxShadow: darkMode ? '0 1px 2px rgba(0,0,0,0.06)' : '0 1px 2px rgba(0,0,0,0.03)',
+          // Add subtle indication for pending files
+          // border: isPending ? `1px solid ${darkMode ? '#d48806' : '#faad14'}` : 'none',
         }}
         className="file-item"
         onMouseEnter={(e) => {
@@ -212,7 +251,6 @@ const FileItem = ({
           e.currentTarget.style.background = "transparent";
         }}
         onClick={(e) => {
-          e.stopPropagation();
           if (content.path) {
             openFileContent(name, content.path);
           }
@@ -241,8 +279,9 @@ const FileItem = ({
             >
               {name}
             </Text>
-            {/* Show status tag for admins */}
-            {isAdmin && getStatusTag()}
+            {/* Show status tag for admins and for pending files if creator */}
+            {(isAdmin || (isPending && isCreator)) && getStatusTag()}
+            
           </Space>
 
           <Space>
@@ -287,17 +326,14 @@ const FileItem = ({
                   fontSize: "12px",
                   lineHeight: "1.5"
                 }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleDetails(e);
-                }}
+                onClick={toggleDetails}
               >
                 Details
               </Tag>
             </Tooltip>
 
-            {/* Delete Button for Admins */}
-            {isAdmin && (
+            {/* Delete Button for Admins and Creators */}
+            {(isAdmin || isCreator) && (
               <Tooltip title="Delete file">
                 <Tag
                   color="red"
@@ -322,36 +358,44 @@ const FileItem = ({
               </Tooltip>
             )}
 
-            {/* Three dots menu */}
-            <Dropdown menu={moreMenuItems} trigger={['click']} placement="bottomRight">
-              <Tag
-                color="default"
-                icon={<MoreOutlined />}
-                style={{
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "3px 8px",
-                  borderRadius: "3px",
-                  fontSize: "12px",
-                  lineHeight: "1.5"
-                }}
-                onClick={(e) => e.stopPropagation()}
-              />
+            {/* Three dots menu - KEY FIX: Make sure to stop propagation on the dropdown */}
+            <Dropdown 
+              menu={moreMenuItems} 
+              trigger={['click']} 
+              placement="bottomRight"
+            >
+              <div onClick={(e) => e.stopPropagation()}>
+                <Tag
+                  color="default"
+                  icon={<MoreOutlined />}
+                  style={{
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "3px 8px",
+                    borderRadius: "3px",
+                    fontSize: "12px",
+                    lineHeight: "1.5"
+                  }}
+                />
+              </div>
             </Dropdown>
           </Space>
         </Space>
 
         {/* File Details Section */}
         {showDetails && (
-          <div style={{
-            width: "100%",
-            padding: "12px 8px",
-            marginTop: "12px",
-            background: darkMode ? '#202021' : "#f9f9f9",
-            borderRadius: "3px",
-            border: `1px dashed ${darkMode ? '#414140' : '#d9d9d9'}`
-          }}>
+          <div 
+            style={{
+              width: "100%",
+              padding: "12px 8px",
+              marginTop: "12px",
+              background: darkMode ? '#202021' : "#f9f9f9",
+              borderRadius: "3px",
+              border: `1px dashed ${darkMode ? '#414140' : '#d9d9d9'}`
+            }}
+            onClick={(e) => e.stopPropagation()} // Prevent file open when clicking details
+          >
             <Row gutter={[16, 8]}>
               <Col xs={24} sm={8}>
                 <Space size={4}>
@@ -377,30 +421,35 @@ const FileItem = ({
                     color: darkMode ? 'rgba(255, 255, 255, 0.45)' : undefined,
                     fontSize: "13px" 
                   }}>
-                    Approved By:
+                    {isPending ? "Uploaded By:" : "Approved By:"}
                   </Text>
                   <Text style={{ 
                     color: darkMode ? 'rgba(255, 255, 255, 0.85)' : undefined,
                     fontSize: "13px" 
                   }}>
-                    {content.approvedBy ? content.approvedBy.username : "—"}
+                    {isPending 
+                      ? (content.uploadedBy?.username || content.creator?.username || "—")
+                      : (content.approvedBy?.username || "—")}
                   </Text>
                 </Space>
               </Col>
               <Col xs={24} sm={8}>
                 <Space size={4}>
-                  <CheckCircleOutlined style={{ color: "#52c41a", fontSize: "14px" }} />
+                  {isPending 
+                    ? <ClockCircleFilled style={{ color: "#faad14", fontSize: "14px" }} />
+                    : <CheckCircleOutlined style={{ color: "#52c41a", fontSize: "14px" }} />
+                  }
                   <Text type="secondary" style={{ 
                     color: darkMode ? 'rgba(255, 255, 255, 0.45)' : undefined,
                     fontSize: "13px" 
                   }}>
-                    Approved At:
+                    {isPending ? "Status:" : "Approved At:"}
                   </Text>
                   <Text style={{ 
                     color: darkMode ? 'rgba(255, 255, 255, 0.85)' : undefined,
                     fontSize: "13px" 
                   }}>
-                    {formatDate(content.approvedAt)}
+                    {isPending ? "Waiting for approval" : formatDate(content.approvedAt)}
                   </Text>
                 </Space>
               </Col>
@@ -410,7 +459,10 @@ const FileItem = ({
 
         {/* Versions List */}
         {isExpanded && hasVersions && (
-          <div style={{ width: "100%", marginTop: "12px" }}>
+          <div 
+            style={{ width: "100%", marginTop: "12px" }}
+            onClick={(e) => e.stopPropagation()} // Prevent file open when clicking versions
+          >
             <VersionsList 
               versions={content.versions} 
               onVersionClick={onVersionClick} 

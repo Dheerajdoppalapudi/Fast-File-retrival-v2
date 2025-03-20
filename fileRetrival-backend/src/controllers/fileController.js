@@ -673,7 +673,6 @@ export const uploadFile = async (req, res) => {
     }
 };
 
-
 export const getApprovalList = async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -923,7 +922,13 @@ export const getApprovedList = async (req, res) => {
             include: {
                 file: {
                     include: {
-                        user: {
+                        creator: {  // Changed from 'user' to 'creator' to match schema relation name
+                            select: {
+                                id: true,
+                                username: true
+                            }
+                        },
+                        approver: {  // Changed from 'admin' to 'approver'
                             select: {
                                 id: true,
                                 username: true
@@ -934,13 +939,8 @@ export const getApprovedList = async (req, res) => {
                             take: 1
                         }
                     }
-                },
-                admin: {
-                    select: {
-                        id: true,
-                        username: true
-                    }
                 }
+                // Removed 'admin' from here as it should be accessed through file.approver
             }
         });
 
@@ -950,15 +950,15 @@ export const getApprovedList = async (req, res) => {
             name: approval.file.name,
             path: approval.file.path,
             uploadedBy: {
-                id: approval.file.user.id,
-                username: approval.file.user.username
+                id: approval.file.creator.id,  // Changed from 'user' to 'creator'
+                username: approval.file.creator.username
             },
             createdAt: approval.file.createdAt,
             approvalStatus: approval.file.approvalStatus,
-            approvedBy: {
-                id: approval.admin.id,
-                username: approval.admin.username
-            },
+            approvedBy: approval.file.approver ? {  // Changed from 'admin' to 'approver'
+                id: approval.file.approver.id,
+                username: approval.file.approver.username
+            } : null,  // Handle possible null approver
             approvedAt: approval.approvedAt,
             latestVersion: approval.file.versions[0] ? {
                 versionNumber: approval.file.versions[0].versionNumber,
