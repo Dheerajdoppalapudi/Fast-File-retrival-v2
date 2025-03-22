@@ -54,11 +54,10 @@ const VersionsList = ({ versions, onVersionClick, contentData, openFileContent, 
 
   return (
     <div style={{
-      marginTop: 12,
       paddingLeft: 38,
       width: "100%",
       background: darkMode ? '#202021' : "#f9f9f9",
-      borderRadius: "6px",
+      borderRadius: "4px",
       padding: "8px",
       marginTop: "12px"
     }}>

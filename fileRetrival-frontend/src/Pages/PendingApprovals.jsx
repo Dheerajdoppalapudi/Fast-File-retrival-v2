@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useCallback } from "react";
 import axios from "axios";
 import {
-  Table, Button, Space, Typography, Tag, message, Card, Spin, Empty, Badge, Tooltip, Row, Col, Divider, Tabs, Modal, List
+  Table, Button, Space, Typography, Tag, message, Card, Spin, Empty, Badge, Tooltip, Row, Col, Divider, Tabs, Modal, Dropdown
 } from "antd";
 import {
   CheckCircleOutlined,
@@ -12,13 +12,18 @@ import {
   ClockCircleOutlined,
   ReloadOutlined,
   HistoryOutlined,
-  DiffOutlined
+  DiffOutlined,
+  EyeOutlined,
+  ExclamationCircleOutlined,
+  FileTextOutlined,
+  MoreOutlined
 } from '@ant-design/icons';
 import { AuthContext } from "../context/AuthContext";
 import CompareModal from "../components/CompareModal";
 
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
+const { confirm } = Modal;
 
 const PendingApprovals = () => {
   const [approvals, setApprovals] = useState([]);
@@ -29,43 +34,44 @@ const PendingApprovals = () => {
   const [compareModalVisible, setCompareModalVisible] = useState(false);
   const [compareData, setCompareData] = useState(null);
   const { user } = useContext(AuthContext);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  useEffect(() => {
-    if (user?.role === "ADMIN") {
-      fetchApprovalList();
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (user?.role === "ADMIN" && activeTab === "history") {
-      fetchApprovedHistory();
-    }
-  }, [user, activeTab]);
-
-  const fetchApprovalList = async () => {
+  // Memoize fetch functions to prevent unnecessary re-renders
+  const fetchApprovalList = useCallback(async () => {
     setLoading(true);
     try {
       const response = await axios.get("http://localhost:8000/files/get-approval-list", {
         headers: { Authorization: `Bearer ${user?.token}` },
       });
 
-      setApprovals(response.data.approvals);
+      const formattedApprovals = response.data.approvals.map(approval => ({
+        ...approval,
+        key: approval.id, // Adding a key for better React performance
+        hasVersions: approval.versions && approval.versions.length > 0,
+      }));
+
+      setApprovals(formattedApprovals);
     } catch (error) {
       console.error("Error fetching approval list:", error);
-      message.error("Failed to fetch pending approvals.");
+      message.error("Failed to fetch pending approvals: " + (error.response?.data?.error || error.message));
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
-  const fetchApprovedHistory = async () => {
+  const fetchApprovedHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
       const response = await axios.get(`http://localhost:8000/files/approvedList`, {
         headers: { Authorization: `Bearer ${user?.token}` },
       });
 
-      setApprovedHistory(response.data.approvals);
+      const formattedHistory = response.data.approvals.map(approval => ({
+        ...approval,
+        key: approval.id,
+      }));
+
+      setApprovedHistory(formattedHistory);
     } catch (error) {
       console.error("Error fetching approved history:", error);
       const errorMsg = error.response?.data?.message || "Failed to fetch approval history.";
@@ -73,55 +79,91 @@ const PendingApprovals = () => {
     } finally {
       setHistoryLoading(false);
     }
-  };
+  }, [user]);
 
-  const handleApprove = async (fileId) => {
-    try {
-      await axios.post(
-        `http://localhost:8000/files/approve/`,
-        {
-          params: { fileId: fileId },
-        },
-        {
-          headers: { Authorization: `Bearer ${user?.token}` },
-        }
-      );
-      message.success("File approved successfully");
+  // Effect for initial data loading
+  useEffect(() => {
+    if (user?.role === "ADMIN") {
       fetchApprovalList();
-    } catch (error) {
-      console.error("Approval failed:", error);
-      message.error("Approval failed. Please try again.");
     }
-  };
+  }, [user, fetchApprovalList, refreshKey]);
 
-  const handleReject = async (fileId) => {
-    try {
-      await axios.post(
-        `${API_BASE_URL}/files/approvals/reject/${fileId}`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${user?.token}` },
+  // Effect for tab-based loading
+  useEffect(() => {
+    if (user?.role === "ADMIN" && activeTab === "history") {
+      fetchApprovedHistory();
+    }
+  }, [user, activeTab, fetchApprovedHistory, refreshKey]);
+
+  // Handle approval action
+  const handleApprove = async (fileId, fileName) => {
+    confirm({
+      title: `Approve file: ${fileName}?`,
+      icon: <CheckCircleOutlined style={{ color: 'green' }} />,
+      content: 'This action will mark the file as approved and make it available to users.',
+      onOk: async () => {
+        try {
+          await axios.post(
+            `http://localhost:8000/files/approve/`,
+            {
+              params: { fileId: fileId },
+            },
+            {
+              headers: { Authorization: `Bearer ${user?.token}` },
+            }
+          );
+          message.success(`"${fileName}" approved successfully`);
+          setRefreshKey(prevKey => prevKey + 1); // Trigger a refresh
+        } catch (error) {
+          console.error("Approval failed:", error);
+          message.error("Approval failed: " + (error.response?.data?.error || error.message));
         }
-      );
-      message.warning("File rejected");
-      fetchApprovalList();
-    } catch (error) {
-      console.error("Rejection failed:", error);
-      const errorMsg = error.response?.data?.message || "Rejection failed. Please try again.";
-      message.error(errorMsg);
-    }
+      },
+    });
   };
 
+  // Handle rejection action
+  const handleReject = async (fileId, fileName) => {
+    confirm({
+      title: `Reject file: ${fileName}?`,
+      icon: <ExclamationCircleOutlined style={{ color: 'red' }} />,
+      content: 'This action will mark the file as rejected.',
+      okText: 'Reject',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          await axios.post(
+            `http://localhost:8000/files/approvals/reject/${fileId}`,
+            {},
+            {
+              headers: { Authorization: `Bearer ${user?.token}` },
+            }
+          );
+          message.warning(`"${fileName}" has been rejected`);
+          setRefreshKey(prevKey => prevKey + 1); // Trigger a refresh
+        } catch (error) {
+          console.error("Rejection failed:", error);
+          const errorMsg = error.response?.data?.message || "Rejection failed. Please try again.";
+          message.error(errorMsg);
+        }
+      },
+    });
+  };
+
+  // Handle compare action
   const handleCompare = (record) => {
     if (record.versions && record.versions.length > 0) {
       const latestVersion = record.versions[0]; 
 
       setCompareData({
         fileName: record.name,
+        description: record.description, // Include description in compare data
         currentPath: record.path,
         latestVersionPath: latestVersion.path,
         versionNumber: latestVersion.versionNumber,
-        allVersions: record.versions
+        allVersions: record.versions,
+        fileId: record.id,
+        approvalStatus: record.approvalStatus
       });
 
       setCompareModalVisible(true);
@@ -130,30 +172,102 @@ const PendingApprovals = () => {
     }
   };
 
+  // Render status tag with tooltip
   const getStatusTag = (status) => {
     switch (status) {
       case "APPROVED":
         return (
-          <Tag icon={<CheckCircleOutlined />} color="success">
-            Approved
-          </Tag>
+          <Tooltip title="This file has been approved">
+            <Tag icon={<CheckCircleOutlined />} color="success">
+              Approved
+            </Tag>
+          </Tooltip>
         );
       case "REJECTED":
         return (
-          <Tag icon={<CloseCircleOutlined />} color="error">
-            Rejected
-          </Tag>
+          <Tooltip title="This file has been rejected">
+            <Tag icon={<CloseCircleOutlined />} color="error">
+              Rejected
+            </Tag>
+          </Tooltip>
         );
       case "PENDING":
       default:
         return (
-          <Tag icon={<SyncOutlined spin />} color="warning">
-            Pending
-          </Tag>
+          <Tooltip title="This file is waiting for approval">
+            <Tag icon={<SyncOutlined spin />} color="warning">
+              Pending
+            </Tag>
+          </Tooltip>
         );
     }
   };
 
+  // Format date with tooltip
+  const formatDate = (dateString) => {
+    if (!dateString) return "—";
+    
+    const date = new Date(dateString);
+    return (
+      <Tooltip title={date.toLocaleString()}>
+        <Space>
+          <ClockCircleOutlined />
+          {date.toLocaleDateString()}
+        </Space>
+      </Tooltip>
+    );
+  };
+
+  // Render description with tooltip and truncation
+  const renderDescription = (description) => {
+    if (!description) return "—";
+    
+    const truncatedDesc = description.length > 40 
+      ? `${description.substring(0, 40)}...` 
+      : description;
+    
+    return (
+      <Tooltip title={description}>
+        <Space>
+          <FileTextOutlined />
+          <Text>{truncatedDesc}</Text>
+        </Space>
+      </Tooltip>
+    );
+  };
+
+  // Create a dropdown menu for actions to save space
+  const getActionMenu = (record) => {
+    const items = [
+      {
+        key: 'approve',
+        label: 'Approve',
+        icon: <CheckCircleOutlined style={{ color: 'green' }} />,
+        disabled: record.approvalStatus !== "PENDING",
+        onClick: () => handleApprove(record.id, record.name)
+      },
+      {
+        key: 'reject',
+        label: 'Reject',
+        icon: <CloseCircleOutlined style={{ color: 'red' }} />,
+        disabled: record.approvalStatus !== "PENDING",
+        onClick: () => handleReject(record.id, record.name)
+      },
+    ];
+
+    if (record.hasVersions) {
+      items.push({
+        key: 'compare',
+        label: 'Compare Versions',
+        icon: <DiffOutlined />,
+        onClick: () => handleCompare(record)
+      });
+    }
+
+    return items;
+  };
+
+  // Table columns for pending approvals
   const pendingColumns = [
     {
       title: "File",
@@ -165,6 +279,17 @@ const PendingApprovals = () => {
           <Text strong>{name}</Text>
         </Space>
       ),
+      sorter: (a, b) => a.name.localeCompare(b.name),
+      width: 200,
+      ellipsis: true,
+    },
+    {
+      title: "Description",
+      dataIndex: "description",
+      key: "description",
+      render: (description) => renderDescription(description),
+      ellipsis: true,
+      width: 200,
     },
     {
       title: "Uploaded By",
@@ -176,78 +301,76 @@ const PendingApprovals = () => {
           {user}
         </Space>
       ),
+      sorter: (a, b) => a.uploadedBy.localeCompare(b.uploadedBy),
+      width: 150,
+      ellipsis: true,
     },
     {
       title: "Upload Date",
       dataIndex: "createdAt",
       key: "createdAt",
-      render: (date) => (
-        <Tooltip title={new Date(date).toLocaleString()}>
-          <Space>
-            <ClockCircleOutlined />
-            {new Date(date).toLocaleDateString()}
-          </Space>
-        </Tooltip>
-      ),
+      render: (date) => formatDate(date),
+      sorter: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+      defaultSortOrder: 'descend',
+      width: 150,
     },
     {
       title: "Status",
       dataIndex: "approvalStatus",
       key: "approvalStatus",
       render: (status) => getStatusTag(status),
+      filters: [
+        { text: 'Pending', value: 'PENDING' },
+        { text: 'Approved', value: 'APPROVED' },
+        { text: 'Rejected', value: 'REJECTED' },
+      ],
+      onFilter: (value, record) => record.approvalStatus === value,
+      width: 120,
     },
     {
-      title: "Approved By",
-      dataIndex: "approvedBy",
-      key: "approvedBy",
-      render: (approvedBy) => approvedBy || "—",
-    },
-    {
-      title: "Approval Date",
-      dataIndex: "approvedAt",
-      key: "approvedAt",
-      render: (date) => (date ? new Date(date).toLocaleDateString() : "—"),
+      title: "Versions",
+      dataIndex: "versions",
+      key: "versions",
+      render: (versions) => versions?.length || 0,
+      width: 80,
+      align: "center",
     },
     {
       title: "Actions",
       key: "actions",
       align: "center",
-      render: (_, record) => (
-        <Space size="small">
-          <Button
-            type="primary"
-            size="small"
-            icon={<CheckCircleOutlined />}
-            onClick={() => handleApprove(record.id)}
-            disabled={record.approvalStatus !== "PENDING"}
-          >
-            Approve
-          </Button>
-          <Button
-            danger
-            size="small"
-            icon={<CloseCircleOutlined />}
-            onClick={() => handleReject(record.id)}
-            disabled={record.approvalStatus !== "PENDING"}
-          >
-            Reject
-          </Button>
-          {record.hasVersions && (
-            <Tag
-             color="geekblue"
-              type="default"
-              size="small"
-              icon={<DiffOutlined />}
-              onClick={() => handleCompare(record)}
-            >
-              Compare
-            </Tag>
-          )}
-        </Space>
-      ),
+      width: 120,
+      fixed: 'right',
+      render: (_, record) => {
+        // For small screens or when space is an issue, use a dropdown menu
+        return (
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            {record.approvalStatus === "PENDING" ? (
+              <Space>
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<CheckCircleOutlined />}
+                  onClick={() => handleApprove(record.id, record.name)}
+                >
+                  Approve
+                </Button>
+                <Dropdown menu={{ items: getActionMenu(record) }}>
+                  <Button type="text" icon={<MoreOutlined />} size="small" />
+                </Dropdown>
+              </Space>
+            ) : (
+              <Dropdown menu={{ items: getActionMenu(record) }}>
+                <Button size="small" type="default">Actions <MoreOutlined /></Button>
+              </Dropdown>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
+  // Table columns for history
   const historyColumns = [
     {
       title: "File",
@@ -259,6 +382,17 @@ const PendingApprovals = () => {
           <Text strong>{name}</Text>
         </Space>
       ),
+      sorter: (a, b) => a.name.localeCompare(b.name),
+      width: 200,
+      ellipsis: true,
+    },
+    {
+      title: "Description",
+      dataIndex: "description",
+      key: "description",
+      render: (description) => renderDescription(description),
+      ellipsis: true,
+      width: 200,
     },
     {
       title: "Uploaded By",
@@ -267,61 +401,75 @@ const PendingApprovals = () => {
       render: (user) => (
         <Space>
           <UserOutlined />
-          {user.username}
+          {typeof user === 'object' ? user.username : user}
         </Space>
       ),
+      width: 150,
+      ellipsis: true,
     },
     {
       title: "Upload Date",
       dataIndex: "createdAt",
       key: "createdAt",
-      render: (date) => (
-        <Tooltip title={new Date(date).toLocaleString()}>
-          <Space>
-            <ClockCircleOutlined />
-            {new Date(date).toLocaleDateString()}
-          </Space>
-        </Tooltip>
-      ),
+      render: (date) => formatDate(date),
+      sorter: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+      defaultSortOrder: 'descend',
+      width: 150,
     },
     {
       title: "Status",
       dataIndex: "approvalStatus",
       key: "approvalStatus",
       render: (status) => getStatusTag(status),
+      width: 120,
     },
     {
       title: "Approved By",
-      dataIndex: "approvedBy",
-      key: "approvedBy",
-      render: (approvedBy) => (
-        <Space>
-          <UserOutlined />
-          {approvedBy.username}
-        </Space>
-      ),
+      dataIndex: "approverName",
+      key: "approverName",
+      render: (name, record) => {
+        const approver = record.approvedBy?.username || record.approverName || "—";
+        return (
+          <Space>
+            <UserOutlined />
+            {approver}
+          </Space>
+        );
+      },
+      width: 150,
+      ellipsis: true,
     },
     {
       title: "Approval Date",
       dataIndex: "approvedAt",
       key: "approvedAt",
-      render: (date) => (
-        <Tooltip title={new Date(date).toLocaleString()}>
-          <Space>
-            <ClockCircleOutlined />
-            {new Date(date).toLocaleDateString()}
-          </Space>
-        </Tooltip>
-      ),
+      render: (date) => formatDate(date),
+      width: 150,
     },
     {
-      title: "Latest Version",
-      dataIndex: "latestVersion",
-      key: "latestVersion",
-      render: (version) => version ? `v${version.versionNumber}` : "—",
+      title: "Actions",
+      key: "actions",
+      align: "center",
+      width: 120,
+      fixed: 'right',
+      render: (_, record) => (
+        <Space size="small">
+          {record.hasVersions && (
+            <Button
+              type="default"
+              size="small"
+              icon={<EyeOutlined />}
+              onClick={() => handleCompare(record)}
+            >
+              History
+            </Button>
+          )}
+        </Space>
+      ),
     },
   ];
 
+  // Access control check
   if (!user || user.role !== "ADMIN") {
     return (
       <Card className="shadow-sm">
@@ -333,10 +481,19 @@ const PendingApprovals = () => {
     );
   }
 
+  // Tab change handler
   const handleTabChange = (key) => {
     setActiveTab(key);
   };
 
+  // Handle approval from the compare modal
+  const handleApproveFromModal = (fileId) => {
+    const file = approvals.find(a => a.id === fileId);
+    if (file) {
+      handleApprove(fileId, file.name);
+    }
+    setCompareModalVisible(false);
+  };
 
   return (
     <Card className="shadow-sm" bordered={false}>
@@ -361,10 +518,11 @@ const PendingApprovals = () => {
             </Col>
             <Col>
               <Button
-                onClick={fetchApprovalList}
+                onClick={() => setRefreshKey(prevKey => prevKey + 1)}
                 icon={<ReloadOutlined />}
                 size="small"
                 type="default"
+                loading={loading}
               >
                 Refresh
               </Button>
@@ -380,11 +538,13 @@ const PendingApprovals = () => {
               rowKey="id"
               pagination={{
                 pageSize: 8,
-                showSizeChanger: false,
+                showSizeChanger: true,
+                pageSizeOptions: ['8', '16', '32'],
                 showTotal: (total) => `Total ${total} items`
               }}
               bordered={false}
               size="middle"
+              scroll={{ x: 1100 }}
               locale={{
                 emptyText: (
                   <Empty
@@ -412,10 +572,11 @@ const PendingApprovals = () => {
             </Col>
             <Col>
               <Button
-                onClick={fetchApprovedHistory}
+                onClick={() => setRefreshKey(prevKey => prevKey + 1)}
                 icon={<ReloadOutlined />}
                 size="small"
                 type="default"
+                loading={historyLoading}
               >
                 Refresh
               </Button>
@@ -431,11 +592,13 @@ const PendingApprovals = () => {
               rowKey="id"
               pagination={{
                 pageSize: 8,
-                showSizeChanger: false,
+                showSizeChanger: true,
+                pageSizeOptions: ['8', '16', '32'],
                 showTotal: (total) => `Total ${total} items`
               }}
               bordered={false}
               size="middle"
+              scroll={{ x: 1200 }}
               locale={{
                 emptyText: (
                   <Empty
@@ -450,11 +613,12 @@ const PendingApprovals = () => {
       </Tabs>
 
       <CompareModal
-      visible={compareModalVisible}
-      onClose={() => setCompareModalVisible(false)}
-      compareData={compareData}
-      user={user}
-    />
+        visible={compareModalVisible}
+        onClose={() => setCompareModalVisible(false)}
+        compareData={compareData}
+        user={user}
+        onApprove={handleApproveFromModal}
+      />
     </Card>
   );
 };

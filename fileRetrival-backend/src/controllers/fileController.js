@@ -556,9 +556,8 @@ export const deleteDirectory = async (req, res) => {
 
 export const uploadFile = async (req, res) => {
     try {
-        const { folderPath } = req.body;
+        const { folderPath, description } = req.body;
         const userId = req.user.userId;
-
         const userRole = req.user.role;
 
         if (!req.file) {
@@ -605,26 +604,44 @@ export const uploadFile = async (req, res) => {
                 fs.copyFileSync(newFilePath, versionedFilePath); // Copy instead of rename
             }
 
-            // Save the version in DB
+            const fileApproval = await db.approval.findUnique({
+                where: { fileId }
+            });
+
+            // Save the version in DB, now including the previous approvedAt and description
             await db.version.create({
                 data: {
                     fileId,
                     filePath: versionedFilePath,
                     versionNumber: newVersionNumber,
-                    approvedBy: existingFile.approvedBy,
+                    description: existingFile.description,
+                    approvedBy: existingFile?.approvedBy,
+                    approvedAt: fileApproval?.approvedAt || null,
                     createdAt: existingFile.createdAt,
                     createdBy: existingFile.createdBy
                 }
             });
 
-            // Update the existing file record
+            // Update the existing file record - setting approvedBy and approvedAt to null (via the approval record)
             await db.file.update({
                 where: { id: fileId },
                 data: {
+                    // Set the approval status to PENDING regardless of user role when updating
                     approvalStatus: userRole === "ADMIN" ? "APPROVED" : "PENDING",
+                    description: description, // Update description field
                     createdBy: userId,
+                    // Set approvedBy to null
                     approvedBy: userRole === "ADMIN" ? userId : null,
                     createdAt: new Date()
+                }
+            });
+
+            // Update the approval record to set approvedBy and approvedAt to null
+            await db.approval.update({
+                where: { fileId },
+                data: {
+                    approvedBy: null,
+                    approvedAt: null
                 }
             });
 
@@ -640,6 +657,7 @@ export const uploadFile = async (req, res) => {
                     name: req.file.originalname,
                     path: newFilePath,
                     directory: folderPath,
+                    description: description, // Add description field
                     createdBy: userId,
                     approvedBy,
                     approvalStatus
@@ -664,7 +682,8 @@ export const uploadFile = async (req, res) => {
         res.status(201).json({
             message: "File uploaded successfully",
             filePath: newFilePath,
-            fileId
+            fileId,
+            description
         });
 
     } catch (error) {
@@ -691,20 +710,26 @@ export const getApprovalList = async (req, res) => {
                     select: { username: true }
                 },
                 approval: {
-                    select: {
-                        approvedBy: true,
-                        approvedAt: true
+                    include: {
+                        approver: {
+                            select: { 
+                                id: true,
+                                username: true 
+                            }
+                        }
                     }
                 },
                 versions: {
                     orderBy: {
                         versionNumber: 'desc'
                     },
-                    select: {
-                        id: true,
-                        filePath: true,
-                        versionNumber: true,
-                        createdAt: true
+                    include: {
+                        approver: {
+                            select: { 
+                                id: true,
+                                username: true 
+                            }
+                        }
                     }
                 }
             }
@@ -715,20 +740,27 @@ export const getApprovalList = async (req, res) => {
         const approvalList = pendingApprovals.map(file => ({
             id: file.id,
             name: file.name,
+            description: file.description, // Added description field
             path: file.path,
             uploadedBy: file.creator.username,
             createdAt: file.createdAt,
             approvalStatus: file.approvalStatus,
             approvedBy: file.approval?.approvedBy || null,
+            approverName: file.approval?.approver?.username || null,
             approvedAt: file.approval?.approvedAt || null,
             hasVersions: file.versions.length > 0,
             versions: file.versions.map(version => ({
                 id: version.id,
                 path: version.filePath,
+                description: version.description, // Added version description field
                 versionNumber: version.versionNumber,
-                createdAt: version.createdAt
+                createdAt: version.createdAt, 
+                approvedBy: version.approvedBy || null,
+                approverName: version.approver?.username || null,
+                approvedAt: version.approvedAt || null
             }))
         }));
+
 
         res.status(200).json({ approvals: approvalList });
     } catch (error) {
@@ -777,11 +809,11 @@ export const approveFile = async (req, res) => {
             where: { id: fileId },
             data: {
                 approvalStatus: "APPROVED",
-                approvedBy: userId // ✅ Store approver in the file table
+                approvedBy: userId
             },
             include: {
-                creator: { select: { username: true } }, // ✅ Include creator
-                approver: { select: { username: true } } // ✅ Include approver
+                creator: { select: { username: true } },
+                approver: { select: { username: true } }
             }
         });
 
@@ -948,6 +980,7 @@ export const getApprovedList = async (req, res) => {
         const approvedList = approvedFiles.map(approval => ({
             id: approval.file.id,
             name: approval.file.name,
+            description: approval.file.description, // Added description field here
             path: approval.file.path,
             uploadedBy: {
                 id: approval.file.creator.id,  // Changed from 'user' to 'creator'
@@ -962,7 +995,8 @@ export const getApprovedList = async (req, res) => {
             approvedAt: approval.approvedAt,
             latestVersion: approval.file.versions[0] ? {
                 versionNumber: approval.file.versions[0].versionNumber,
-                createdAt: approval.file.versions[0].createdAt
+                createdAt: approval.file.versions[0].createdAt,
+                description: approval.file.versions[0].description // Added version description field
             } : null
         }));
 

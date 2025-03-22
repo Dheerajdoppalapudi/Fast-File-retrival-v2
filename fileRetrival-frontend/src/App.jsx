@@ -1,10 +1,10 @@
 import React, { useEffect, useContext, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { Layout, Menu, Typography, Avatar, Divider, Switch, Space, Button, Tooltip } from "antd";
-import { 
-  FileOutlined, 
-  DiffOutlined, 
-  AuditOutlined, 
+import {
+  FileOutlined,
+  DiffOutlined,
+  AuditOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -32,7 +32,7 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
   const { logout, user } = useContext(AuthContext);
   const { theme, toggleTheme } = useContext(ThemeContext);
   const isDarkMode = theme === 'dark';
-  
+
   const selectedKey = location.pathname === "/" ? "files" : location.pathname.slice(1);
 
   const handleLogout = () => {
@@ -150,14 +150,14 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
         </Menu.Item>
       </Menu>
 
-      <div style={{ 
-        position: "absolute", 
-        bottom: "32px", 
-        width: "100%", 
+      <div style={{
+        position: "absolute",
+        bottom: "32px",
+        width: "100%",
         padding: "0 16px 16px 16px"
       }}>
         <Divider style={{ margin: "16px 0", borderColor: isDarkMode ? '#313130' : '#f0f0f0' }} />
-        
+
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>
           <Switch
             checkedChildren={<BulbFilled />}
@@ -166,39 +166,44 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
             onChange={toggleTheme}
           />
         </div>
-        
+
         {/* Minimalist logout button that adapts to sidebar collapsed state */}
         {collapsed ? (
-          <Tooltip title="Logout" placement="right">
-            <Button 
-              type="text" 
-              icon={<LogoutOutlined />} 
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <Tooltip title="Logout" placement="right">
+              <Button
+                type="text"
+                icon={<LogoutOutlined />}
+                onClick={handleLogout}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "4px 16px",
+                  color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)'
+                }}
+              />
+            </Tooltip>
+          </div>
+        ) : (
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <Button
+              type="text"
+              icon={<LogoutOutlined />}
               onClick={handleLogout}
               style={{
                 width: "100%",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)'
+                justifyContent: "center", // Changed from "flex-start" to "center"
+                color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)',
+                padding: "4px 16px"
               }}
-            />
-          </Tooltip>
-        ) : (
-          <Button 
-            type="text" 
-            icon={<LogoutOutlined />} 
-            onClick={handleLogout}
-            style={{
-              width: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "flex-start",
-              color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)',
-              padding: "4px 16px"
-            }}
-          >
-            Logout
-          </Button>
+            >
+              Logout
+            </Button>
+          </div>
         )}
       </div>
     </Sider>
@@ -212,24 +217,24 @@ const AppContent = () => {
   const isDarkMode = theme === 'dark';
   const hideNavbar = ["/login", "/register"].includes(location.pathname);
   const [collapsed, setCollapsed] = useState(false);
-  
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
       {!hideNavbar && user && (
         <AppSidebar collapsed={collapsed} setCollapsed={setCollapsed} />
       )}
-      
-      <Layout style={{ 
+
+      <Layout style={{
         marginLeft: !hideNavbar && user ? (collapsed ? 80 : 240) : 0,
         transition: 'all 0.2s',
         backgroundColor: isDarkMode ? '#202021' : '#f0f2f5'
       }}>
         {!hideNavbar && user && (
-          <Header style={{ 
-            padding: "0 16px", 
+          <Header style={{
+            padding: "0 16px",
             background: isDarkMode ? '#202021' : '#fff',
-            boxShadow: isDarkMode 
-              ? "0 1px 0 0 #313130" 
+            boxShadow: isDarkMode
+              ? "0 1px 0 0 #313130"
               : "0 1px 0 0 #e8e8e8, 0 1px 6px rgba(0,0,0,0.05)",
             display: "flex",
             alignItems: "center",
@@ -239,34 +244,34 @@ const AppContent = () => {
             transition: "box-shadow 0.3s ease",
             width: "100%"
           }}>
-            <Button 
-              type="text" 
-              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} 
+            <Button
+              type="text"
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
               onClick={() => setCollapsed(!collapsed)}
               style={{
                 fontSize: '16px',
                 width: 64,
                 height: 64,
                 color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)'
-              }} 
+              }}
             />
-            
+
             <Space style={{ marginLeft: "16px" }}>
               <HomeOutlined />
-              <span style={{ 
+              <span style={{
                 color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
                 fontWeight: 500
               }}>
-                {location.pathname === "/" 
-                  ? "Files" 
+                {location.pathname === "/"
+                  ? "Files"
                   : location.pathname.slice(1).charAt(0).toUpperCase() + location.pathname.slice(2)}
               </span>
             </Space>
           </Header>
         )}
-        
-        <Content style={{ 
-          padding: 14, 
+
+        <Content style={{
+          padding: 14,
           minHeight: 280,
           backgroundColor: isDarkMode ? '#202021' : '#fff'
         }}>
@@ -278,7 +283,7 @@ const AppContent = () => {
             <Route path="/approvals" element={<PendingApprovals userId={user?.id} />} />
           </Routes>
         </Content>
-        
+
         <AppFooter />
       </Layout>
     </Layout>

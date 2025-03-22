@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useContext } from "react";
 import axios from "axios";
-import { Button, Input, Modal, Tag, message, Card, Space, Typography, Spin, Empty, Divider, Row, Col, Tooltip, Badge } from "antd";
+import { Button, Input, Modal, Tag, message, Card, Space, Typography, Spin, Empty, Divider, Row, Col, Tooltip, Badge, Upload } from "antd";
 import {
   FolderAddOutlined,
   UploadOutlined,
@@ -8,7 +8,9 @@ import {
   HomeOutlined,
   LockOutlined,
   UserOutlined,
-  ClockCircleOutlined 
+  ClockCircleOutlined,
+  FileTextOutlined,
+  InboxOutlined
 } from "@ant-design/icons";
 import BreadcrumbNav from "../components/BreadcrumbNav";
 import SearchBar from "../components/SearchBar";
@@ -16,7 +18,8 @@ import FileList from "../components/FileList";
 import { AuthContext } from "../context/AuthContext";
 import { ThemeContext } from "../context/ThemeContext";
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
+const { TextArea } = Input;
 
 // Helper functions
 const handleCreateFolder = async (folderName, currentPath, fetchFiles, setIsFolderModalVisible, setFolderName, user) => {
@@ -37,13 +40,19 @@ const handleCreateFolder = async (folderName, currentPath, fetchFiles, setIsFold
   }
 };
 
-const handleUpload = async (user, selectedFile, currentPath, fetchFiles, setUploading, setSelectedFile) => {
+const handleUpload = async (user, selectedFile, currentPath, description, fetchFiles, setUploading, setFileUploadModalVisible) => {
   if (!selectedFile) return;
+  if (!description.trim()) {
+    message.error("Description is required");
+    return;
+  }
 
   setUploading(true);
   const formData = new FormData();
   formData.append("file", selectedFile);
   formData.append("folderPath", currentPath.join("/"));
+  formData.append("description", description); // Add description to the form data
+
   try {
     await axios.post("http://localhost:8000/files/upload", 
       formData, 
@@ -51,7 +60,7 @@ const handleUpload = async (user, selectedFile, currentPath, fetchFiles, setUplo
     );
     fetchFiles();
     message.success("File uploaded successfully");
-    setSelectedFile(null); // Clear the selected file after upload
+    setFileUploadModalVisible(false);
   } catch (error) {
     console.error("Error uploading file:", error);
     message.error(error.response?.data?.message || "Failed to upload file. Please try again.");
@@ -163,10 +172,7 @@ const FileManagerControls = ({ currentPath, searchQuery, setSearchQuery, setCurr
 
 const FileManagerActions = ({
   setIsFolderModalVisible,
-  setSelectedFile,
-  selectedFile,
-  uploading,
-  handleUpload,
+  setFileUploadModalVisible,
   canUpload,
   isDarkMode
 }) => {
@@ -193,48 +199,21 @@ const FileManagerActions = ({
         </Col>
 
         <Col>
-          <Space>
-            <input
-              type="file"
-              id="file-input"
-              onChange={(e) => setSelectedFile(e.target.files[0])}
-              style={{ display: 'none' }}
+          <Tooltip title={actionTitle}>
+            <Button
+              type="primary"
+              icon={<UploadOutlined />}
+              onClick={() => setFileUploadModalVisible(true)}
               disabled={!canUpload}
-            />
-
-            <Tooltip title={actionTitle}>
-              <Button
-                icon={canUpload ? <UploadOutlined /> : <LockOutlined />}
-                onClick={() => canUpload && document.getElementById('file-input').click()}
-                disabled={!canUpload}
-                style={{ borderRadius: '2px' }}
-              >
-                {selectedFile ? (
-                  <Badge status="success" dot>
-                    {selectedFile.name.length > 15
-                      ? `${selectedFile.name.substring(0, 15)}...`
-                      : selectedFile.name}
-                  </Badge>
-                ) : "Select File"}
-              </Button>
-            </Tooltip>
-
-            <Tooltip title={actionTitle}>
-              <Button
-                type="primary"
-                onClick={handleUpload}
-                disabled={!selectedFile || !canUpload}
-                loading={uploading}
-                style={{
-                  borderRadius: '2px',
-                  background: selectedFile && canUpload ? "#52c41a" : undefined,
-                  borderColor: selectedFile && canUpload ? "#52c41a" : undefined
-                }}
-              >
-                Upload
-              </Button>
-            </Tooltip>
-          </Space>
+              style={{
+                borderRadius: '2px',
+                background: canUpload ? "#52c41a" : undefined,
+                borderColor: canUpload ? "#52c41a" : undefined
+              }}
+            >
+              Upload File
+            </Button>
+          </Tooltip>
         </Col>
       </Row>
     </div>
@@ -279,6 +258,119 @@ const FolderCreationModal = ({ visible, setVisible, folderName, setFolderName, h
   </Modal>
 );
 
+// New file upload modal component
+const FileUploadModal = ({ 
+  visible, 
+  setVisible, 
+  handleUpload, 
+  canUpload, 
+  isDarkMode,
+  uploading
+}) => {
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [description, setDescription] = useState("");
+
+  const resetForm = () => {
+    setSelectedFile(null);
+    setDescription("");
+  };
+
+  const onCancel = () => {
+    resetForm();
+    setVisible(false);
+  };
+
+  const onSubmit = () => {
+    if (selectedFile && description.trim()) {
+      handleUpload(selectedFile, description);
+    }
+  };
+
+  const uploadProps = {
+    beforeUpload: (file) => {
+      setSelectedFile(file);
+      return false;
+    },
+    onRemove: () => {
+      setSelectedFile(null);
+    },
+    fileList: selectedFile ? [selectedFile] : []
+  };
+
+  return (
+    <Modal
+      title={
+        <Space style={{ color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)' }}>
+          <UploadOutlined />
+          Upload File
+        </Space>
+      }
+      open={visible}
+      onOk={onSubmit}
+      onCancel={onCancel}
+      okButtonProps={{
+        disabled: !selectedFile || !description.trim() || !canUpload,
+        loading: uploading,
+        style: { borderRadius: '2px' }
+      }}
+      cancelButtonProps={{ style: { borderRadius: '2px' } }}
+      destroyOnClose={true}
+    >
+      {canUpload ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <Upload.Dragger
+              {...uploadProps}
+              style={{ 
+                backgroundColor: isDarkMode ? '#1f1f1f' : '#fff',
+                borderColor: isDarkMode ? '#333' : '#d9d9d9'
+              }}
+            >
+              <p className="ant-upload-drag-icon">
+                <InboxOutlined style={{ color: isDarkMode ? '#1890ff' : '#40a9ff' }} />
+              </p>
+              <p className="ant-upload-text" style={{ color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)' }}>
+                Click or drag file to this area to upload
+              </p>
+              <p className="ant-upload-hint" style={{ color: isDarkMode ? 'rgba(255, 255, 255, 0.45)' : 'rgba(0, 0, 0, 0.45)' }}>
+                Support for a single file upload.
+              </p>
+            </Upload.Dragger>
+          </div>
+          
+          <div>
+            <div style={{ marginBottom: '8px' }}>
+              <Text strong style={{ color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)' }}>
+                File Description <span style={{ color: '#ff4d4f' }}>*</span>
+              </Text>
+            </div>
+            <TextArea
+              placeholder="Enter a description for this file (required)"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+              style={{ 
+                backgroundColor: isDarkMode ? '#202021' : '#fff',
+                borderColor: isDarkMode ? '#333' : '#d9d9d9',
+                color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)'
+              }}
+            />
+            {!description.trim() && selectedFile && (
+              <Text type="danger" style={{ fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                Description is required
+              </Text>
+            )}
+          </div>
+        </div>
+      ) : (
+        <Typography.Text type="danger">
+          You don't have permission to upload files in this directory.
+        </Typography.Text>
+      )}
+    </Modal>
+  );
+};
+
 // Main component
 const FileManager = () => {
   const [files, setFiles] = useState({});
@@ -287,7 +379,7 @@ const FileManager = () => {
   const [loading, setLoading] = useState(true);
   const [folderName, setFolderName] = useState("");
   const [isFolderModalVisible, setIsFolderModalVisible] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [isFileUploadModalVisible, setFileUploadModalVisible] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [currentDirectoryInfo, setCurrentDirectoryInfo] = useState(null);
   const [userAccess, setUserAccess] = useState({
@@ -325,6 +417,7 @@ const FileManager = () => {
           isFolder: false,
           versions: file.versions || [],
           path: file.path,
+          description: file.description, // Include description field
           createdAt: file.createdDate || file.createdAt,
           approvedBy: file.approvedBy,
           approvedAt: file.approvedAt,
@@ -387,6 +480,19 @@ const FileManager = () => {
     fetchFiles();
   }, [fetchFiles]);
 
+  // Function to handle file upload from the modal
+  const handleFileUpload = (file, description) => {
+    handleUpload(
+      user,
+      file,
+      currentPath,
+      description,
+      fetchFiles,
+      setUploading,
+      setFileUploadModalVisible
+    );
+  };
+
   // Check if user has upload permissions
   const canUpload = userAccess.isAdmin || user?.role === "EDITOR" || userAccess.hasWritePermission;
 
@@ -447,10 +553,7 @@ const FileManager = () => {
 
       <FileManagerActions
         setIsFolderModalVisible={setIsFolderModalVisible}
-        setSelectedFile={setSelectedFile}
-        selectedFile={selectedFile}
-        uploading={uploading}
-        handleUpload={() => handleUpload(user, selectedFile, currentPath, fetchFiles, setUploading, setSelectedFile)}
+        setFileUploadModalVisible={setFileUploadModalVisible}
         canUpload={canUpload}
         isDarkMode={isDarkMode}
       />
@@ -460,7 +563,6 @@ const FileManager = () => {
         minHeight: 300,
         backgroundColor: isDarkMode ? '' : '',
         borderRadius: '2px',
-        // padding: '16px'
       }}>
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300 }}>
@@ -485,6 +587,7 @@ const FileManager = () => {
         )}
       </div>
 
+      {/* Folder Creation Modal */}
       <FolderCreationModal
         visible={isFolderModalVisible}
         setVisible={setIsFolderModalVisible}
@@ -493,6 +596,16 @@ const FileManager = () => {
         handleCreate={() => handleCreateFolder(folderName, currentPath, fetchFiles, setIsFolderModalVisible, setFolderName, user)}
         canCreate={canUpload}
         isDarkMode={isDarkMode}
+      />
+
+      {/* File Upload Modal */}
+      <FileUploadModal
+        visible={isFileUploadModalVisible}
+        setVisible={setFileUploadModalVisible}
+        handleUpload={handleFileUpload}
+        canUpload={canUpload}
+        isDarkMode={isDarkMode}
+        uploading={uploading}
       />
     </Card>
   );

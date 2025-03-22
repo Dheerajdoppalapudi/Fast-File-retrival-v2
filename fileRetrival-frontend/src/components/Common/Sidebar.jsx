@@ -1,5 +1,5 @@
 import React, { useState, useContext } from "react";
-import { Layout, Menu, Typography, Avatar, Tooltip, Divider } from "antd";
+import { Layout, Menu, Typography, Avatar, Tooltip, Divider, Button } from "antd";
 import {
   FileOutlined,
   DiffOutlined,
@@ -115,24 +115,34 @@ const Sidebar = () => {
         </Menu.Item>
       </Menu>
 
-      <div style={{ position: "absolute", bottom: "20px", width: "100%" }}>
-        <Divider style={{ borderColor: "rgba(255,255,255,0.1)", margin: "8px 0" }} />
-        <Tooltip title="Logout">
-          <Menu 
-            theme="dark" 
-            mode="inline"
-            selectable={false}
-          >
-            <Menu.Item 
-              key="logout" 
-              icon={<LogoutOutlined />} 
-              onClick={handleLogout}
-              danger
-            >
-              Logout
-            </Menu.Item>
-          </Menu>
-        </Tooltip>
+      <div 
+        style={{ 
+          position: "absolute", 
+          bottom: "20px", 
+          width: "100%", 
+          display: 'flex', 
+          flexDirection: 'column',
+          alignItems: 'center', 
+          padding: '0 16px'
+        }}
+      >
+        <Divider style={{ borderColor: "rgba(255,255,255,0.1)", width: '80%', margin: "16px 0 24px" }} />
+        <Button
+          type="primary"
+          danger
+          icon={<LogoutOutlined />}
+          onClick={handleLogout}
+          style={{
+            width: collapsed ? '50px' : '80%',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            borderRadius: '4px',
+            boxShadow: '0 2px 8px rgba(255, 77, 79, 0.2)',
+          }}
+        >
+          {!collapsed && "Logout"}
+        </Button>
       </div>
     </Sider>
   );
