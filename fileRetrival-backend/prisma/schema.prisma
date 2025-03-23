@@ -50,27 +50,36 @@ model User {
 }
 
 model Directory {
-  id        String      @id @default(uuid())
-  name      String
-  parentId  String? 
-  parent    Directory?  @relation("ParentChild", fields: [parentId], references: [id])
-  children  Directory[] @relation("ParentChild")
-  createdAt DateTime    @default(now())
+  id            String      @id @default(uuid())
+  name          String
+  path          String      @unique  
+  parentId      String?     
+  parent        Directory?  @relation("ParentChild", fields: [parentId], references: [id])
+  children      Directory[] @relation("ParentChild")
+  createdAt     DateTime    @default(now())
   
-  // Update the createdBy field to be a proper relation
-  createdBy String?
-  creator   User?       @relation("DirectoryCreator", fields: [createdBy], references: [id])
+  createdBy     String?
+  creator       User?       @relation("DirectoryCreator", fields: [createdBy], references: [id])
   
-  // Relation to permissions
-  permissions Permission[] @relation("DirectoryPermissions")
+  permissions   Permission[] @relation("DirectoryPermissions")
+  files         File[]       @relation("DirectoryFiles")
+  
+  @@unique([name, parentId])  
+  @@index([parentId])
+  @@index([path])
 }
 
 model File {
   id             String         @id @default(uuid())
   name           String
-  description    String? 
+  description    String?
   path           String         @unique
-  directory      String
+  
+  directoryId    String?        
+  directory      Directory?     @relation("DirectoryFiles", fields: [directoryId], references: [id])
+  
+  directoryPath  String?        
+  
   createdAt      DateTime       @default(now())
   createdBy      String
   creator        User           @relation(name: "FileCreator", fields: [createdBy], references: [id], onDelete: Cascade)
@@ -80,7 +89,6 @@ model File {
   approver       User?          @relation(name: "FileApprover", fields: [approvedBy], references: [id], onDelete: SetNull)
   approval       Approval?
   
-  // Relation to permissions
   permissions    Permission[]   @relation("FilePermissions")
 }
 
@@ -118,22 +126,18 @@ model Permission {
   permissionType PermissionType
   resourceType   ResourceType
   
-  // User who has this permission
   userId        String
   user          User           @relation(name: "PermissionUser", fields: [userId], references: [id], onDelete: Cascade)
   
-  // User who granted this permission
   grantedBy     String?
   granter       User?          @relation(name: "PermissionGranter", fields: [grantedBy], references: [id], onDelete: SetNull)
   
-  // Resource this permission applies to (either file or directory)
   fileId        String?
   file          File?          @relation(name: "FilePermissions", fields: [fileId], references: [id], onDelete: Cascade)
   
   directoryId   String?
   directory     Directory?     @relation(name: "DirectoryPermissions", fields: [directoryId], references: [id], onDelete: Cascade)
   
-  // Whether this permission should cascade to children (only applies to directories)
   cascadeToChildren Boolean     @default(true)
   
   createdAt     DateTime       @default(now())

@@ -382,7 +382,7 @@ const CompareModal = ({
       onCancel={onClose}
       width="90%"
       style={{ top: 20 }}
-      bodyStyle={{ maxHeight: 'calc(95vh - 130px)', overflow: 'auto', padding: '16px' }}
+      bodyStyle={{ maxHeight: 'calc(95vh - 130px)', overflow: 'auto', padding: '4px' }}
       footer={modalFooter}
     >
       {compareData ? (

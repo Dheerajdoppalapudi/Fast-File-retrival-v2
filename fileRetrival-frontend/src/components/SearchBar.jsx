@@ -4,7 +4,7 @@ import { SearchOutlined } from '@ant-design/icons';
 
 const { Search } = Input;
 
-const SearchBar = ({ searchQuery, onSearch, style }) => {
+const SearchBar = ({ searchQuery, onSearch, style, isDarkMode }) => {
   return (
     <Search
       placeholder="Search files and folders..."
@@ -13,7 +13,11 @@ const SearchBar = ({ searchQuery, onSearch, style }) => {
       size="middle"
       value={searchQuery}
       onChange={(e) => onSearch(e.target.value)}
-      style={{ ...style }}
+      onSearch={(value) => onSearch(value)} // Add this to handle search button clicks
+      style={{ 
+        ...style,
+        backgroundColor: isDarkMode ? '#202021' : '#fff'
+      }}
     />
   );
 };

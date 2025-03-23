@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext, useCallback } from "react";
 import axios from "axios";
 import {
-  Table, Button, Space, Typography, Tag, message, Card, Spin, Empty, Badge, Tooltip, Row, Col, Divider, Tabs, Modal, Dropdown
+  Table, Button, Space, Typography, Tag, message, Card, Spin, Empty, Badge, Tooltip, Row, Col, Divider, Tabs, Modal, Descriptions
 } from "antd";
 import {
   CheckCircleOutlined,
@@ -15,13 +15,12 @@ import {
   DiffOutlined,
   EyeOutlined,
   ExclamationCircleOutlined,
-  FileTextOutlined,
-  MoreOutlined
+  InfoCircleOutlined
 } from '@ant-design/icons';
 import { AuthContext } from "../context/AuthContext";
 import CompareModal from "../components/CompareModal";
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 const { TabPane } = Tabs;
 const { confirm } = Modal;
 
@@ -33,8 +32,14 @@ const PendingApprovals = () => {
   const [activeTab, setActiveTab] = useState("pending");
   const [compareModalVisible, setCompareModalVisible] = useState(false);
   const [compareData, setCompareData] = useState(null);
+  const [detailsModalVisible, setDetailsModalVisible] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
   const { user } = useContext(AuthContext);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Check if user has approval permissions
+  const canApprove = user?.role === "ADMIN"; // Only admins can approve
+  const hasAccess = user?.role === "ADMIN" || user?.role === "EDITOR"; // Both admins and editors have access
 
   // Memoize fetch functions to prevent unnecessary re-renders
   const fetchApprovalList = useCallback(async () => {
@@ -83,47 +88,57 @@ const PendingApprovals = () => {
 
   // Effect for initial data loading
   useEffect(() => {
-    if (user?.role === "ADMIN") {
+    if (hasAccess) {
       fetchApprovalList();
     }
-  }, [user, fetchApprovalList, refreshKey]);
+  }, [user, fetchApprovalList, refreshKey, hasAccess]);
 
   // Effect for tab-based loading
   useEffect(() => {
-    if (user?.role === "ADMIN" && activeTab === "history") {
+    if (hasAccess && activeTab === "history") {
       fetchApprovedHistory();
     }
-  }, [user, activeTab, fetchApprovedHistory, refreshKey]);
+  }, [user, activeTab, fetchApprovedHistory, refreshKey, hasAccess]);
+
+  // Show details modal with file information
+  const showDetailsModal = (record) => {
+    setSelectedFile(record);
+    setDetailsModalVisible(true);
+  };
 
   // Handle approval action
   const handleApprove = async (fileId, fileName) => {
-    confirm({
-      title: `Approve file: ${fileName}?`,
-      icon: <CheckCircleOutlined style={{ color: 'green' }} />,
-      content: 'This action will mark the file as approved and make it available to users.',
-      onOk: async () => {
-        try {
-          await axios.post(
-            `http://localhost:8000/files/approve/`,
-            {
-              params: { fileId: fileId },
-            },
-            {
-              headers: { Authorization: `Bearer ${user?.token}` },
-            }
-          );
-          message.success(`"${fileName}" approved successfully`);
-          setRefreshKey(prevKey => prevKey + 1); // Trigger a refresh
-        } catch (error) {
-          console.error("Approval failed:", error);
-          message.error("Approval failed: " + (error.response?.data?.error || error.message));
+    if (!canApprove) {
+      message.error("You don't have permission to approve files.");
+      return;
+    }
+
+    try {
+      await axios.post(
+        `http://localhost:8000/files/approve/`,
+        {
+          params: { fileId: fileId },
+        },
+        {
+          headers: { Authorization: `Bearer ${user?.token}` },
         }
-      },
-    });
+      );
+      message.success(`"${fileName}" approved successfully`);
+      setRefreshKey(prevKey => prevKey + 1); // Trigger a refresh
+      setDetailsModalVisible(false);
+    } catch (error) {
+      console.error("Approval failed:", error);
+      message.error("Approval failed: " + (error.response?.data?.error || error.message));
+    }
   };
 
   // Handle rejection action
   const handleReject = async (fileId, fileName) => {
+    if (!canApprove) {
+      message.error("You don't have permission to reject files.");
+      return;
+    }
+
     confirm({
       title: `Reject file: ${fileName}?`,
       icon: <ExclamationCircleOutlined style={{ color: 'red' }} />,
@@ -141,6 +156,7 @@ const PendingApprovals = () => {
           );
           message.warning(`"${fileName}" has been rejected`);
           setRefreshKey(prevKey => prevKey + 1); // Trigger a refresh
+          setDetailsModalVisible(false);
         } catch (error) {
           console.error("Rejection failed:", error);
           const errorMsg = error.response?.data?.message || "Rejection failed. Please try again.";
@@ -153,7 +169,7 @@ const PendingApprovals = () => {
   // Handle compare action
   const handleCompare = (record) => {
     if (record.versions && record.versions.length > 0) {
-      const latestVersion = record.versions[0]; 
+      const latestVersion = record.versions[0];
 
       setCompareData({
         fileName: record.name,
@@ -206,7 +222,7 @@ const PendingApprovals = () => {
   // Format date with tooltip
   const formatDate = (dateString) => {
     if (!dateString) return "—";
-    
+
     const date = new Date(dateString);
     return (
       <Tooltip title={date.toLocaleString()}>
@@ -218,53 +234,67 @@ const PendingApprovals = () => {
     );
   };
 
-  // Render description with tooltip and truncation
-  const renderDescription = (description) => {
-    if (!description) return "—";
-    
-    const truncatedDesc = description.length > 40 
-      ? `${description.substring(0, 40)}...` 
-      : description;
-    
-    return (
-      <Tooltip title={description}>
-        <Space>
-          <FileTextOutlined />
-          <Text>{truncatedDesc}</Text>
+  // Get the appropriate actions for a record based on user role
+  const getActionButtons = (record) => {
+    // For ADMIN: Show all action buttons
+    if (canApprove) {
+      return (
+        <Space size="small">
+          <Button
+            type="primary"
+            size="small"
+            icon={<InfoCircleOutlined />}
+            onClick={() => showDetailsModal(record)}
+          >
+            {record.approvalStatus === "PENDING" ? "Approve" : "Details"}
+          </Button>
+          {record.approvalStatus === "PENDING" && (
+            <Button
+              danger
+              size="small"
+              icon={<CloseCircleOutlined />}
+              onClick={() => handleReject(record.id, record.name)}
+            >
+              Reject
+            </Button>
+          )}
+          {record.hasVersions && (
+            <Button
+              type="default"
+              size="small"
+              icon={<DiffOutlined />}
+              onClick={() => handleCompare(record)}
+            >
+              Compare
+            </Button>
+          )}
         </Space>
-      </Tooltip>
-    );
-  };
-
-  // Create a dropdown menu for actions to save space
-  const getActionMenu = (record) => {
-    const items = [
-      {
-        key: 'approve',
-        label: 'Approve',
-        icon: <CheckCircleOutlined style={{ color: 'green' }} />,
-        disabled: record.approvalStatus !== "PENDING",
-        onClick: () => handleApprove(record.id, record.name)
-      },
-      {
-        key: 'reject',
-        label: 'Reject',
-        icon: <CloseCircleOutlined style={{ color: 'red' }} />,
-        disabled: record.approvalStatus !== "PENDING",
-        onClick: () => handleReject(record.id, record.name)
-      },
-    ];
-
-    if (record.hasVersions) {
-      items.push({
-        key: 'compare',
-        label: 'Compare Versions',
-        icon: <DiffOutlined />,
-        onClick: () => handleCompare(record)
-      });
+      );
     }
 
-    return items;
+    // For EDITOR: Only show view details and compare
+    return (
+      <Space size="small">
+        <Button
+          type="default"
+          size="small"
+          icon={<InfoCircleOutlined />}
+          onClick={() => showDetailsModal(record)}
+        >
+          Details
+        </Button>
+        {record.hasVersions && (
+          <Button
+            type="default"
+            size="small"
+            icon={<DiffOutlined />}
+            onClick={() => handleCompare(record)}
+          >
+            Compare
+          </Button>
+        )}
+      </Space>
+    );
   };
 
   // Table columns for pending approvals
@@ -280,16 +310,8 @@ const PendingApprovals = () => {
         </Space>
       ),
       sorter: (a, b) => a.name.localeCompare(b.name),
-      width: 200,
+      width: 250,
       ellipsis: true,
-    },
-    {
-      title: "Description",
-      dataIndex: "description",
-      key: "description",
-      render: (description) => renderDescription(description),
-      ellipsis: true,
-      width: 200,
     },
     {
       title: "Uploaded By",
@@ -302,7 +324,7 @@ const PendingApprovals = () => {
         </Space>
       ),
       sorter: (a, b) => a.uploadedBy.localeCompare(b.uploadedBy),
-      width: 150,
+      width: 180,
       ellipsis: true,
     },
     {
@@ -312,7 +334,7 @@ const PendingApprovals = () => {
       render: (date) => formatDate(date),
       sorter: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
       defaultSortOrder: 'descend',
-      width: 150,
+      width: 180,
     },
     {
       title: "Status",
@@ -332,41 +354,15 @@ const PendingApprovals = () => {
       dataIndex: "versions",
       key: "versions",
       render: (versions) => versions?.length || 0,
-      width: 80,
+      width: 100,
       align: "center",
     },
     {
       title: "Actions",
       key: "actions",
       align: "center",
-      width: 120,
-      fixed: 'right',
-      render: (_, record) => {
-        // For small screens or when space is an issue, use a dropdown menu
-        return (
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            {record.approvalStatus === "PENDING" ? (
-              <Space>
-                <Button
-                  type="primary"
-                  size="small"
-                  icon={<CheckCircleOutlined />}
-                  onClick={() => handleApprove(record.id, record.name)}
-                >
-                  Approve
-                </Button>
-                <Dropdown menu={{ items: getActionMenu(record) }}>
-                  <Button type="text" icon={<MoreOutlined />} size="small" />
-                </Dropdown>
-              </Space>
-            ) : (
-              <Dropdown menu={{ items: getActionMenu(record) }}>
-                <Button size="small" type="default">Actions <MoreOutlined /></Button>
-              </Dropdown>
-            )}
-          </div>
-        );
-      },
+      width: 300,
+      render: (_, record) => getActionButtons(record),
     },
   ];
 
@@ -383,16 +379,8 @@ const PendingApprovals = () => {
         </Space>
       ),
       sorter: (a, b) => a.name.localeCompare(b.name),
-      width: 200,
+      width: 250,
       ellipsis: true,
-    },
-    {
-      title: "Description",
-      dataIndex: "description",
-      key: "description",
-      render: (description) => renderDescription(description),
-      ellipsis: true,
-      width: 200,
     },
     {
       title: "Uploaded By",
@@ -404,7 +392,7 @@ const PendingApprovals = () => {
           {typeof user === 'object' ? user.username : user}
         </Space>
       ),
-      width: 150,
+      width: 180,
       ellipsis: true,
     },
     {
@@ -414,7 +402,7 @@ const PendingApprovals = () => {
       render: (date) => formatDate(date),
       sorter: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
       defaultSortOrder: 'descend',
-      width: 150,
+      width: 180,
     },
     {
       title: "Status",
@@ -436,7 +424,7 @@ const PendingApprovals = () => {
           </Space>
         );
       },
-      width: 150,
+      width: 180,
       ellipsis: true,
     },
     {
@@ -444,16 +432,23 @@ const PendingApprovals = () => {
       dataIndex: "approvedAt",
       key: "approvedAt",
       render: (date) => formatDate(date),
-      width: 150,
+      width: 180,
     },
     {
       title: "Actions",
       key: "actions",
       align: "center",
-      width: 120,
-      fixed: 'right',
+      width: 180,
       render: (_, record) => (
         <Space size="small">
+          <Button
+            type="default"
+            size="small"
+            icon={<InfoCircleOutlined />}
+            onClick={() => showDetailsModal(record)}
+          >
+            Details
+          </Button>
           {record.hasVersions && (
             <Button
               type="default"
@@ -470,7 +465,7 @@ const PendingApprovals = () => {
   ];
 
   // Access control check
-  if (!user || user.role !== "ADMIN") {
+  if (!hasAccess) {
     return (
       <Card className="shadow-sm">
         <Empty
@@ -488,11 +483,53 @@ const PendingApprovals = () => {
 
   // Handle approval from the compare modal
   const handleApproveFromModal = (fileId) => {
+    if (!canApprove) {
+      message.error("You don't have permission to approve files.");
+      return;
+    }
+
     const file = approvals.find(a => a.id === fileId);
     if (file) {
       handleApprove(fileId, file.name);
     }
     setCompareModalVisible(false);
+  };
+
+  // Get the appropriate footer for the details modal based on user role and file status
+  const getModalFooter = () => {
+    if (!selectedFile) return null;
+
+    // For ADMIN and PENDING status: Show Approve/Reject buttons
+    if (canApprove && selectedFile.approvalStatus === "PENDING") {
+      return [
+        <Button key="close" onClick={() => setDetailsModalVisible(false)}>
+          Cancel
+        </Button>,
+        <Button
+          key="reject"
+          danger
+          icon={<CloseCircleOutlined />}
+          onClick={() => handleReject(selectedFile.id, selectedFile.name)}
+        >
+          Reject
+        </Button>,
+        <Button
+          key="approve"
+          type="primary"
+          icon={<CheckCircleOutlined />}
+          onClick={() => handleApprove(selectedFile.id, selectedFile.name)}
+        >
+          Approve
+        </Button>,
+      ];
+    }
+
+    // For all other cases: Just show Close button
+    return [
+      <Button key="close" onClick={() => setDetailsModalVisible(false)}>
+        Close
+      </Button>,
+    ];
   };
 
   return (
@@ -514,7 +551,10 @@ const PendingApprovals = () => {
         >
           <Row align="middle" justify="space-between" style={{ marginBottom: 16 }}>
             <Col>
-              <Title level={4} style={{ margin: 0 }}>Pending File Approvals</Title>
+              <Title level={4} style={{ margin: 0 }}>
+                Pending File Approvals
+                {!canApprove && <Text type="secondary" style={{ fontSize: '14px', marginLeft: '10px' }}>(View only)</Text>}
+              </Title>
             </Col>
             <Col>
               <Button
@@ -598,7 +638,7 @@ const PendingApprovals = () => {
               }}
               bordered={false}
               size="middle"
-              scroll={{ x: 1200 }}
+              scroll={{ x: 1100 }}
               locale={{
                 emptyText: (
                   <Empty
@@ -612,12 +652,132 @@ const PendingApprovals = () => {
         </TabPane>
       </Tabs>
 
+      {/* File details modal */}
+      <Modal
+        title={
+          <Space>
+            <FileOutlined />
+            <span>File Details: {selectedFile?.name}</span>
+          </Space>
+        }
+        open={detailsModalVisible}
+        onCancel={() => setDetailsModalVisible(false)}
+        footer={getModalFooter()}
+        width={700}
+      >
+        {selectedFile && (
+          <div style={{ maxHeight: '65vh', overflowY: 'auto', paddingRight: '10px' }}>
+            <Descriptions
+              bordered
+              column={{ xxl: 2, xl: 2, lg: 2, md: 1, sm: 1, xs: 1 }}
+              style={{ marginBottom: '20px' }}
+            >
+              <Descriptions.Item label="File Name" span={2}>
+                <Space>
+                  <FileOutlined />
+                  <Text strong>{selectedFile.name}</Text>
+                </Space>
+              </Descriptions.Item>
+
+              <Descriptions.Item label="Description" span={2}>
+                <Paragraph>{selectedFile.description || "—"}</Paragraph>
+              </Descriptions.Item>
+
+              <Descriptions.Item label="File Path">
+                <Text copyable>{selectedFile.path}</Text>
+              </Descriptions.Item>
+
+              <Descriptions.Item label="Status">
+                {getStatusTag(selectedFile.approvalStatus)}
+              </Descriptions.Item>
+
+              <Descriptions.Item label="Uploaded By">
+                <Space>
+                  <UserOutlined />
+                  {typeof selectedFile.uploadedBy === 'object'
+                    ? selectedFile.uploadedBy.username
+                    : selectedFile.uploadedBy}
+                </Space>
+              </Descriptions.Item>
+
+              <Descriptions.Item label="Upload Date">
+                {formatDate(selectedFile.createdAt)}
+              </Descriptions.Item>
+
+              {selectedFile.approvalStatus === "APPROVED" && (
+                <>
+                  <Descriptions.Item label="Approved By">
+                    <Space>
+                      <UserOutlined />
+                      {selectedFile.approvedBy?.username || selectedFile.approverName || "—"}
+                    </Space>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Approval Date">
+                    {formatDate(selectedFile.approvedAt)}
+                  </Descriptions.Item>
+                </>
+              )}
+
+              <Descriptions.Item label="Version Count">
+                {selectedFile.versions?.length || 0}
+              </Descriptions.Item>
+            </Descriptions>
+
+            {selectedFile.versions?.length > 0 && (
+              <>
+                <Divider orientation="left">Version History</Divider>
+                <Table
+                  size="small"
+                  pagination={false}
+                  dataSource={selectedFile.versions.map(v => ({ ...v, key: v.id }))}
+                  columns={[
+                    {
+                      title: "Version",
+                      dataIndex: "versionNumber",
+                      key: "versionNumber",
+                      width: 100,
+                    },
+                    {
+                      title: "Description",
+                      dataIndex: "description",
+                      key: "description",
+                      ellipsis: true,
+                    },
+                    {
+                      title: "Created",
+                      dataIndex: "createdAt",
+                      key: "createdAt",
+                      render: formatDate,
+                      width: 180,
+                    }
+                  ]}
+                />
+
+                <div style={{ marginTop: '16px', textAlign: 'right' }}>
+                  <Button
+                    type="default"
+                    icon={<DiffOutlined />}
+                    onClick={() => {
+                      handleCompare(selectedFile);
+                      setDetailsModalVisible(false);
+                    }}
+                  >
+                    Compare Versions
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Compare modal */}
       <CompareModal
         visible={compareModalVisible}
         onClose={() => setCompareModalVisible(false)}
         compareData={compareData}
         user={user}
-        onApprove={handleApproveFromModal}
+        onApprove={canApprove ? handleApproveFromModal : null}
       />
     </Card>
   );

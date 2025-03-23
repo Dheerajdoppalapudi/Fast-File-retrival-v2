@@ -10,7 +10,8 @@ import {
   UserOutlined,
   ClockCircleOutlined,
   FileTextOutlined,
-  InboxOutlined
+  InboxOutlined,
+  ReloadOutlined
 } from "@ant-design/icons";
 import BreadcrumbNav from "../components/BreadcrumbNav";
 import SearchBar from "../components/SearchBar";
@@ -146,15 +147,25 @@ const DirectoryInfo = ({ directory, isDarkMode }) => {
   );
 };
 
-const FileManagerControls = ({ currentPath, searchQuery, setSearchQuery, setCurrentPath, isDarkMode }) => (
+const FileManagerControls = ({ currentPath, searchQuery, setSearchQuery, setCurrentPath, isDarkMode, fetchFiles }) => (
   <div style={{ marginBottom: '16px' }}>
     <Row gutter={16} align="middle" style={{ marginBottom: '12px' }}>
-      <Col xs={24}>
+      <Col flex="auto">
         <BreadcrumbNav
           currentPath={currentPath}
           onNavigate={(index) => setCurrentPath(currentPath.slice(0, index))}
           isDarkMode={isDarkMode}
         />
+      </Col>
+      <Col>
+        <Tooltip title="Refresh">
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={fetchFiles}
+            size="middle"
+            style={{ borderRadius: '2px' }}
+          />
+        </Tooltip>
       </Col>
     </Row>
     <Row>
@@ -201,15 +212,11 @@ const FileManagerActions = ({
         <Col>
           <Tooltip title={actionTitle}>
             <Button
-              type="primary"
+              // type="primary"
               icon={<UploadOutlined />}
               onClick={() => setFileUploadModalVisible(true)}
               disabled={!canUpload}
-              style={{
-                borderRadius: '2px',
-                background: canUpload ? "#52c41a" : undefined,
-                borderColor: canUpload ? "#52c41a" : undefined
-              }}
+              style={{ borderRadius: '2px' }}
             >
               Upload File
             </Button>
@@ -386,6 +393,7 @@ const FileManager = () => {
     isAdmin: false,
     hasWritePermission: false
   });
+  const [filteredFiles, setFilteredFiles] = useState({});
 
   const { user } = useContext(AuthContext);
   const { theme } = useContext(ThemeContext);
@@ -466,7 +474,15 @@ const FileManager = () => {
         });
 
         // Build file structure
-        setFiles(buildFolderStructure(response.data));
+        const fileStructure = buildFolderStructure(response.data);
+        setFiles(fileStructure);
+        
+        // Reset search when changing directories
+        if (searchQuery) {
+          filterFiles(fileStructure, searchQuery);
+        } else {
+          setFilteredFiles(fileStructure);
+        }
       }
     } catch (error) {
       console.error("Error fetching files:", error);
@@ -474,11 +490,41 @@ const FileManager = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPath, user]);
+  }, [currentPath, user, searchQuery]);
 
   useEffect(() => {
     fetchFiles();
   }, [fetchFiles]);
+
+  // Function to filter files based on search query
+  const filterFiles = useCallback((filesObj, query) => {
+    if (!query.trim()) {
+      setFilteredFiles(filesObj);
+      return;
+    }
+
+    const lowerQuery = query.toLowerCase();
+    const filtered = {};
+
+    Object.entries(filesObj).forEach(([name, data]) => {
+      if (name.toLowerCase().includes(lowerQuery) || 
+          (data.description && data.description.toLowerCase().includes(lowerQuery))) {
+        filtered[name] = data;
+      }
+    });
+
+    setFilteredFiles(filtered);
+  }, []);
+
+  // Update filtered files when search query changes
+  useEffect(() => {
+    filterFiles(files, searchQuery);
+  }, [searchQuery, files, filterFiles]);
+
+  // Handler for search query changes
+  const handleSearchChange = (value) => {
+    setSearchQuery(value);
+  };
 
   // Function to handle file upload from the modal
   const handleFileUpload = (file, description) => {
@@ -532,10 +578,11 @@ const FileManager = () => {
 
       <FileManagerControls
         currentPath={currentPath}
-        setSearchQuery={setSearchQuery}
+        setSearchQuery={handleSearchChange}
         searchQuery={searchQuery}
         setCurrentPath={setCurrentPath}
         isDarkMode={isDarkMode}
+        fetchFiles={fetchFiles}
       />
 
       {currentDirectoryInfo && (
@@ -568,9 +615,9 @@ const FileManager = () => {
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300 }}>
             <Spin size="large" tip="Loading files..." />
           </div>
-        ) : Object.keys(files).length > 0 ? (
+        ) : Object.keys(filteredFiles).length > 0 ? (
           <FileList
-            files={Object.entries(files)}
+            files={Object.entries(filteredFiles)}
             onNavigate={(folder) => setCurrentPath([...currentPath, folder])}
             currentPath={currentPath}
             isDarkMode={isDarkMode}
@@ -578,9 +625,15 @@ const FileManager = () => {
         ) : (
           <Empty
             description={
-              <Text style={{ color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.45)' }}>
-                No files found in this directory
-              </Text>
+              searchQuery ? (
+                <Text style={{ color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.45)' }}>
+                  No files found matching "{searchQuery}"
+                </Text>
+              ) : (
+                <Text style={{ color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.45)' }}>
+                  No files found in this directory
+                </Text>
+              )
             }
             style={{ marginTop: 40 }}
           />

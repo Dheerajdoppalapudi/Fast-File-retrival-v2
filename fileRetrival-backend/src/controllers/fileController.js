@@ -13,6 +13,538 @@ if (!fs.existsSync(ROOT_DIRECTORY)) fs.mkdirSync(ROOT_DIRECTORY, { recursive: tr
 if (!fs.existsSync(VERSION_DIR)) fs.mkdirSync(VERSION_DIR, { recursive: true });
 
 
+export const getFiles = async (req, res) => {
+    try {
+        const folderPath = req.query.path || "";
+        const userId = req.user.userId;
+        const userRole = req.user.role;
+
+        // Normalize the path to ensure consistent format
+        const normalizedPath = folderPath ? ('/' + folderPath.split('/').filter(Boolean).join('/')) : "";
+        
+        // Admin access check shortcut
+        const isAdmin = userRole === 'ADMIN';
+
+        // Get current directory info - now directly by path
+        let currentDirectory = null;
+        if (normalizedPath !== "") {
+            currentDirectory = await db.directory.findUnique({
+                where: { path: normalizedPath },
+                include: {
+                    creator: {
+                        select: {
+                            id: true,
+                            username: true,
+                            role: true
+                        }
+                    },
+                    permissions: {
+                        where: {
+                            userId
+                        }
+                    },
+                    parent: {
+                        select: {
+                            id: true,
+                            name: true,
+                            path: true,
+                            parentId: true,
+                            createdAt: true
+                        }
+                    }
+                }
+            });
+
+            if (!currentDirectory) {
+                return res.status(404).json({ error: "Directory not found in database" });
+            }
+
+            // Check permission to access this directory
+            const isOwner = currentDirectory.createdBy === userId;
+            const hasPermission = isAdmin ||
+                isOwner ||
+                (currentDirectory.permissions && currentDirectory.permissions.length > 0);
+
+            if (!hasPermission) {
+                // Check permission on any parent directory that cascades permissions
+                const hasParentPermission = await checkParentDirectoryPermission(normalizedPath, userId);
+
+                if (!hasParentPermission) {
+                    return res.status(403).json({
+                        error: "Access denied",
+                        message: "You don't have permission to access this directory"
+                    });
+                }
+            }
+        }
+
+        // Get parent directory info - now simplified with the parent relation
+        const parentDirectory = currentDirectory?.parent || null;
+
+        // Get subdirectories with permission filtering - simplified with parentId
+        const subdirectories = await db.directory.findMany({
+            where: {
+                parentId: currentDirectory?.id || null // Null for root directories
+            },
+            include: {
+                creator: {
+                    select: {
+                        id: true,
+                        username: true,
+                        role: true
+                    }
+                },
+                permissions: {
+                    where: {
+                        userId
+                    }
+                }
+            }
+        });
+
+        // For non-admins, check for cascading permissions from parent directories
+        let userHasParentPermission = false;
+        if (!isAdmin && currentDirectory) {
+            // If the user has permission on the current directory, all subdirectories are accessible
+            userHasParentPermission = currentDirectory.createdBy === userId ||
+                (currentDirectory.permissions && currentDirectory.permissions.length > 0);
+        }
+
+        // Filter subdirectories based on permissions for non-admins
+        const accessibleDirectories = isAdmin || userHasParentPermission ?
+            subdirectories :
+            subdirectories.filter(dir =>
+                dir.createdBy === userId || // User is the owner
+                (dir.permissions && dir.permissions.length > 0) // User has explicit permission
+            );
+
+        // Get files in the current directory - using directoryId
+        const dbFiles = await db.file.findMany({
+            where: { 
+                directoryId: currentDirectory?.id || null 
+            },
+            include: {
+                creator: {
+                    select: {
+                        id: true,
+                        username: true,
+                        role: true
+                    }
+                },
+                versions: {
+                    orderBy: { versionNumber: "desc" },
+                    include: {
+                        creator: {
+                            select: {
+                                id: true,
+                                username: true
+                            }
+                        }
+                    }
+                },
+                approval: {
+                    select: {
+                        approvedAt: true,
+                        approver: {
+                            select: {
+                                id: true,
+                                username: true
+                            }
+                        }
+                    }
+                },
+                permissions: {
+                    where: {
+                        userId
+                    }
+                }
+            }
+        });
+
+        // Non-admins need additional permission checking for files
+        const accessibleFiles = isAdmin || userHasParentPermission ?
+            dbFiles :
+            dbFiles.filter(file =>
+                file.createdBy === userId || // User is the owner
+                (file.permissions && file.permissions.length > 0) // User has explicit permission
+            );
+
+        // Format directory data - now with path from database
+        const directories = accessibleDirectories.map(dir => ({
+            id: dir.id,
+            name: dir.name,
+            path: dir.path, // Using the stored path instead of building it
+            createdAt: dir.createdAt,
+            createdBy: dir.creator ? {
+                id: dir.creator.id,
+                username: dir.creator.username,
+                role: dir.creator.role
+            } : null,
+            permissions: dir.permissions || [],
+            permissionType: dir.permissions && dir.permissions.length > 0 ? dir.permissions[0].permissionType : null,
+            hasPermission: true, // All directories in this list are accessible
+            isOwner: dir.createdBy === userId
+        }));
+
+        // Format file data
+        const files = accessibleFiles.map(file => {
+            const filePermissions = file.permissions || [];
+            const currentDirPermissions = currentDirectory?.permissions || [];
+            
+            return {
+                id: file.id,
+                name: file.name,
+                path: file.path,
+                createdDate: file.createdAt,
+                approvalStatus: file.approvalStatus,
+                uploadedBy: file.creator ? {
+                    id: file.creator.id,
+                    username: file.creator.username,
+                    role: file.creator.role
+                } : null,
+                approvedBy: file.approval?.approver ? {
+                    id: file.approval.approver.id,
+                    username: file.approval.approver.username
+                } : null,
+                approvedAt: file.approval?.approvedAt || null,
+                versions: file.versions.map(v => ({
+                    versionNumber: v.versionNumber,
+                    filePath: v.filePath,
+                    createdAt: v.createdAt,
+                    version: v.versionNumber,
+                    createdBy: v.creator?.username || "Unknown"
+                })),
+                permissions: filePermissions,
+                permissionType: filePermissions.length > 0 ? filePermissions[0].permissionType : null,
+                hasPermission: true, // All files in this list are accessible
+                isOwner: file.createdBy === userId,
+                canEdit: isAdmin ||
+                    file.createdBy === userId ||
+                    filePermissions.some(p => p.permissionType === 'WRITE') ||
+                    (userHasParentPermission && currentDirPermissions.some(p => p.permissionType === 'WRITE'))
+            };
+        });
+
+        // Check if physical directory exists
+        const fullPath = path.join(ROOT_DIRECTORY, folderPath);
+        const physicalDirectoryExists = fs.existsSync(fullPath);
+
+        // Create directory if it doesn't exist but is in the database
+        if (!physicalDirectoryExists && currentDirectory) {
+            try {
+                fs.mkdirSync(fullPath, { recursive: true });
+                console.log(`Created physical directory: ${fullPath}`);
+            } catch (err) {
+                console.error(`Error creating physical directory: ${err.message}`);
+            }
+        }
+
+        res.status(200).json({
+            currentDirectory: currentDirectory ? {
+                id: currentDirectory.id,
+                name: currentDirectory.name,
+                path: currentDirectory.path,
+                createdAt: currentDirectory.createdAt,
+                createdBy: currentDirectory.creator ? {
+                    id: currentDirectory.creator.id,
+                    username: currentDirectory.creator.username,
+                    role: currentDirectory.creator.role
+                } : null,
+                isOwner: currentDirectory.createdBy === userId,
+                permissions: currentDirectory.permissions || [],
+                permissionType: currentDirectory.permissions?.length > 0
+                    ? currentDirectory.permissions[0].permissionType
+                    : null
+            } : {
+                id: null,
+                name: "Root",
+                path: "",
+                createdAt: null,
+                createdBy: null,
+                isOwner: false,
+                permissions: []
+            },
+            parentDirectory,
+            directories,
+            files,
+            userAccess: {
+                isAdmin,
+                userId,
+                hasParentPermission: userHasParentPermission
+            }
+        });
+    } catch (error) {
+        console.error("Error retrieving files:", error);
+        res.status(500).json({ error: "Error retrieving files", details: error.message });
+    }
+};
+
+// Updated helper function for checking parent directory permissions
+async function checkParentDirectoryPermission(dirPath, userId) {
+    if (!dirPath) return false;
+
+    // Get all parent paths
+    const pathParts = dirPath.split('/').filter(Boolean);
+    const parentPaths = [];
+    
+    // Build up all possible parent paths
+    for (let i = 1; i <= pathParts.length; i++) {
+        const partialPath = '/' + pathParts.slice(0, i).join('/');
+        parentPaths.push(partialPath);
+    }
+    
+    // Sort from deepest to shallowest (closest parents first)
+    parentPaths.sort((a, b) => b.length - a.length);
+    
+    // Check each parent path for permissions
+    for (const parentPath of parentPaths) {
+        const parentDir = await db.directory.findUnique({
+            where: { path: parentPath },
+            include: {
+                permissions: {
+                    where: {
+                        userId,
+                        cascadeToChildren: true
+                    }
+                }
+            }
+        });
+
+        if (parentDir && parentDir.permissions && parentDir.permissions.length > 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+export const uploadFile = async (req, res) => {
+    try {
+        const { folderPath, description } = req.body;
+        const userId = req.user.userId;
+        const userRole = req.user.role;
+
+        if (!req.file) {
+            return res.status(400).json({ error: "No file uploaded." });
+        }
+
+        // Normalize the path to ensure consistent format
+        const normalizedPath = folderPath ? ('/' + folderPath.split('/').filter(Boolean).join('/')) : "";
+
+        // Find the directory by path
+        let directory = null;
+        if (normalizedPath) {
+            directory = await db.directory.findUnique({
+                where: { path: normalizedPath },
+                include: {
+                    permissions: {
+                        where: {
+                            userId,
+                            permissionType: 'WRITE'
+                        }
+                    }
+                }
+            });
+
+            if (!directory) {
+                return res.status(404).json({ error: "Directory not found in database" });
+            }
+
+            // Check permission to write to this directory (if not admin)
+            if (userRole !== 'ADMIN') {
+                const isOwner = directory.createdBy === userId;
+                const hasWritePermission = directory.permissions && directory.permissions.length > 0;
+
+                if (!isOwner && !hasWritePermission) {
+                    // Check parent directories for cascading write permissions
+                    const hasParentWritePermission = await checkParentDirectoryWritePermission(normalizedPath, userId);
+                    
+                    if (!hasParentWritePermission) {
+                        return res.status(403).json({
+                            error: "Access denied",
+                            message: "You don't have permission to upload files to this directory"
+                        });
+                    }
+                }
+            }
+        }
+
+        // Set up file paths
+        const fileSavePath = path.join(ROOT_DIRECTORY, folderPath);
+        const fileSaveVersionPath = path.join(VERSION_DIR, folderPath);
+        const newFilePath = path.join(fileSavePath, req.file.originalname);
+        const versionFilePath = path.join(fileSaveVersionPath, req.file.originalname);
+
+        // Ensure directories exist
+        if (!fs.existsSync(fileSavePath)) {
+            fs.mkdirSync(fileSavePath, { recursive: true });
+        }
+        if (!fs.existsSync(fileSaveVersionPath)) {
+            fs.mkdirSync(fileSaveVersionPath, { recursive: true });
+        }
+
+        // Check if file already exists
+        let existingFile = await db.file.findUnique({
+            where: { path: newFilePath }
+        });
+
+        let fileId;
+        if (existingFile) {
+            fileId = existingFile.id;
+
+            // Find the latest version of the file
+            const latestVersion = await db.version.findMany({
+                where: { fileId },
+                orderBy: { versionNumber: "desc" },
+                take: 1
+            });
+
+            const newVersionNumber = latestVersion.length ? latestVersion[0].versionNumber + 1 : 1;
+
+            // Create proper versioned file name
+            const fileExt = path.extname(req.file.originalname);
+            const fileName = path.basename(req.file.originalname, fileExt);
+            const versionedFileName = `${fileName}_v${newVersionNumber}${fileExt}`;
+            const versionedFilePath = path.join(fileSaveVersionPath, versionedFileName);
+
+            // Move the existing file to the versions directory
+            if (fs.existsSync(newFilePath)) {
+                fs.copyFileSync(newFilePath, versionedFilePath);
+            }
+
+            // Create a new version record
+            await db.version.create({
+                data: {
+                    fileId,
+                    filePath: versionedFilePath,
+                    versionNumber: newVersionNumber,
+                    createdBy: userId,
+                    description: description || `Version ${newVersionNumber}`
+                }
+            });
+
+            // Update the existing file record
+            await db.file.update({
+                where: { id: fileId },
+                data: {
+                    description: description || existingFile.description, // Update description if provided
+                    approvalStatus: userRole === "ADMIN" ? "APPROVED" : "PENDING",
+                    approvedBy: userRole === "ADMIN" ? userId : null
+                }
+            });
+
+            console.log(`Existing file versioned as: ${versionedFilePath}`);
+        } else {
+            // Determine approval status based on user role
+            const approvalStatus = userRole === "ADMIN" ? "APPROVED" : "PENDING";
+            const approvedBy = userRole === "ADMIN" ? userId : null;
+
+            // Create a new file entry in DB with directoryId
+            // No version created for first-time uploads
+            const newFile = await db.file.create({
+                data: {
+                    name: req.file.originalname,
+                    description: description, // Add description from request body
+                    path: newFilePath,
+                    directoryId: directory?.id || null, // Use directoryId instead of directory path string
+                    directoryPath: normalizedPath, // Store the normalized path for reference
+                    createdBy: userId,
+                    approvedBy,
+                    approvalStatus,
+                    // Create approval entry in the same transaction
+                    approval: {
+                        create: {
+                            approvedBy,
+                            approvedAt: approvedBy ? new Date() : null
+                        }
+                    }
+                }
+            });
+
+            fileId = newFile.id;
+
+            // Copy any directory permissions that should apply to files
+            if (directory) {
+                const directoryPermissions = await db.permission.findMany({
+                    where: {
+                        directoryId: directory.id,
+                        resourceType: 'DIRECTORY',
+                        cascadeToChildren: true
+                    }
+                });
+
+                // Create equivalent file permissions
+                for (const dirPerm of directoryPermissions) {
+                    await db.permission.create({
+                        data: {
+                            permissionType: dirPerm.permissionType,
+                            resourceType: 'FILE',
+                            userId: dirPerm.userId,
+                            fileId: newFile.id,
+                            grantedBy: userId,
+                            cascadeToChildren: false // Files don't have children
+                        }
+                    });
+                }
+            }
+        }
+
+        // Write the uploaded file
+        fs.writeFileSync(newFilePath, req.file.buffer);
+
+        res.status(201).json({
+            message: "File uploaded successfully",
+            filePath: newFilePath,
+            fileId,
+            description
+        });
+
+    } catch (error) {
+        console.error("Error uploading file:", error);
+        res.status(500).json({ error: "Error uploading file", details: error.message });
+    }
+};
+
+// Helper function to check parent directories for write permissions
+async function checkParentDirectoryWritePermission(dirPath, userId) {
+    if (!dirPath) return false;
+
+    // Get all parent paths
+    const pathParts = dirPath.split('/').filter(Boolean);
+    const parentPaths = [];
+    
+    // Build up all possible parent paths
+    for (let i = 1; i <= pathParts.length; i++) {
+        const partialPath = '/' + pathParts.slice(0, i).join('/');
+        parentPaths.push(partialPath);
+    }
+    
+    // Sort from deepest to shallowest (closest parents first)
+    parentPaths.sort((a, b) => b.length - a.length);
+    
+    // Check each parent path for WRITE permissions
+    for (const parentPath of parentPaths) {
+        const parentDir = await db.directory.findUnique({
+            where: { path: parentPath },
+            include: {
+                permissions: {
+                    where: {
+                        userId,
+                        permissionType: 'WRITE',
+                        cascadeToChildren: true
+                    }
+                }
+            }
+        });
+
+        if (parentDir && parentDir.permissions && parentDir.permissions.length > 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 export const getFileContent = async (req, res) => {
     try {
         const requestedPath = req.query.path;
@@ -134,7 +666,6 @@ function isBinaryFile(extension) {
     return binaryExtensions.includes(extension);
 }
 
-// This function identifies binary files that we want to display in the browser
 function isBinaryFileForDisplay(extension) {
     const displayableExtensions = [
         '.pdf', '.doc', '.docx', '.xls', '.xlsx',
@@ -155,361 +686,126 @@ export const createDirectory = async (req, res) => {
         }
 
         if (!folderPath) {
-            return res.status(400).json({ message: "Directory path is required!" })
+            return res.status(400).json({ message: "Directory path is required!" });
         }
 
-        const directoryName = path.basename(folderPath);
-        const parentPath = path.dirname(folderPath);
+        // Normalize the path to ensure consistent format
+        // This makes sure we don't have double slashes, we always have leading slash, etc.
+        const normalizedPath = '/' + folderPath.split('/').filter(Boolean).join('/');
+        
+        // Extract directory name and parent path
+        const directoryName = path.basename(normalizedPath);
+        const parentPath = path.dirname(normalizedPath);
+        const parentPathNormalized = parentPath === '/' ? '' : parentPath;
 
-        const existingDirectory = await db.directory.findFirst({
-            where: {
-                name: directoryName,
-                parent: {
-                    name: parentPath,
-                },
-            },
+        // Check if a directory with this path already exists
+        const existingDirectory = await db.directory.findUnique({
+            where: { path: normalizedPath }
         });
 
         if (existingDirectory) {
-            return res.status(400).json({ message: "Directory already exists in this location!" });
+            return res.status(400).json({ 
+                message: "Directory already exists!", 
+                directory: existingDirectory 
+            });
         }
 
-        const absfolderPath = path.join(ROOT_DIRECTORY, folderPath);
-
-        if (!fs.existsSync(absfolderPath)) {
-            fs.mkdirSync(absfolderPath, { recursive: true });
-        }
-
-        // Update to the database
+        // Find the parent directory by path
         let parentDirectory = null;
-        if (parentPath !== "." && parentPath !== "") {
-            parentDirectory = await db.directory.findFirst({
-                where: { name: parentPath },
-            });
-        }
-
-        const newDirectory = await db.directory.create({
-            data: {
-                name: directoryName,
-                parentId: parentDirectory ? parentDirectory.id : null,
-                createdBy: userId, // This now links to the User model
-            },
-            include: {
-                creator: true, // Include the creator information in the response
-            },
-        });
-
-        res.status(201).json({
-            message: "Directory created successfully",
-            directoryPath: absfolderPath,
-            directory: newDirectory,
-        });
-    } catch (error) {
-        res.status(500).json({ message: "Error creating directory", error: error.message });
-    }
-}
-
-export const getFiles = async (req, res) => {
-    try {
-        const folderPath = req.query.path || "";
-        const userId = req.user.userId;
-        const userRole = req.user.role;
-
-        // Admin access check shortcut
-        const isAdmin = userRole === 'ADMIN';
-
-        // Get current directory info
-        let currentDirectory = null;
-        if (folderPath !== "") {
-            const currentDirName = path.basename(folderPath);
-            currentDirectory = await db.directory.findFirst({
-                where: { name: currentDirName },
-                include: {
-                    creator: {
-                        select: {
-                            id: true,
-                            username: true,
-                            role: true
-                        }
-                    },
-                    permissions: {
-                        where: {
-                            userId
-                        }
-                    }
-                }
+        if (parentPathNormalized) {
+            parentDirectory = await db.directory.findUnique({
+                where: { path: parentPathNormalized }
             });
 
-            if (!currentDirectory) {
-                return res.status(404).json({ error: "Directory not found in database" });
+            if (!parentDirectory) {
+                return res.status(404).json({ 
+                    message: "Parent directory not found",
+                    parentPath: parentPathNormalized
+                });
             }
 
-            // Check permission to access this directory
-            const isOwner = currentDirectory.createdBy === userId;
-            const hasPermission = isAdmin ||
-                isOwner ||
-                (currentDirectory.permissions && currentDirectory.permissions.length > 0);
+            // Check if user has permission to create in this parent directory
+            if (userRole !== 'ADMIN') {
+                const isParentOwner = parentDirectory.createdBy === userId;
+                const hasWritePermission = await db.permission.findFirst({
+                    where: {
+                        directoryId: parentDirectory.id,
+                        userId,
+                        permissionType: 'WRITE'
+                    }
+                });
 
-            if (!hasPermission) {
-                // Check permission on any parent directory that cascades permissions
-                const hasParentPermission = await checkParentDirectoryPermission(folderPath, userId);
-
-                if (!hasParentPermission) {
-                    return res.status(403).json({
-                        error: "Access denied",
-                        message: "You don't have permission to access this directory"
+                if (!isParentOwner && !hasWritePermission) {
+                    return res.status(403).json({ 
+                        message: "You don't have permission to create directories in this location" 
                     });
                 }
             }
         }
 
-        // Get parent directory info
-        let parentDirectory = null;
-        if (folderPath !== "" && currentDirectory?.parentId) {
-            parentDirectory = await db.directory.findUnique({
-                where: { id: currentDirectory.parentId },
-                select: {
-                    id: true,
-                    name: true,
-                    parentId: true,
-                    createdAt: true
+        // Create the physical directory
+        const absfolderPath = path.join(ROOT_DIRECTORY, folderPath);
+        if (!fs.existsSync(absfolderPath)) {
+            fs.mkdirSync(absfolderPath, { recursive: true });
+            console.log(`Created physical directory: ${absfolderPath}`);
+        }
+
+        // Create the directory in the database with the path field
+        const newDirectory = await db.directory.create({
+            data: {
+                name: directoryName,
+                path: normalizedPath,
+                parentId: parentDirectory ? parentDirectory.id : null,
+                createdBy: userId,
+            },
+            include: {
+                creator: true,
+            },
+        });
+
+        // Copy permissions from parent directory if it exists (CASCADE permissions)
+        if (parentDirectory) {
+            // Get all permissions from the parent that have cascadeToChildren=true
+            const parentPermissions = await db.permission.findMany({
+                where: {
+                    directoryId: parentDirectory.id,
+                    cascadeToChildren: true
                 }
             });
-        }
 
-        // Get subdirectories with permission filtering
-        let subdirectoriesQuery = {
-            where: {
-                parentId: currentDirectory?.id || null // Null for root directories
-            },
-            include: {
-                creator: {
-                    select: {
-                        id: true,
-                        username: true,
-                        role: true
-                    }
-                },
-                permissions: {
-                    where: {
-                        userId
-                    }
-                }
-            }
-        };
-
-        const subdirectories = await db.directory.findMany(subdirectoriesQuery);
-
-        // For non-admins, check for cascading permissions from parent directories
-        let userHasParentPermission = false;
-        if (!isAdmin && currentDirectory) {
-            // If the user has permission on the current directory, all subdirectories are accessible
-            userHasParentPermission = currentDirectory.createdBy === userId ||
-                (currentDirectory.permissions && currentDirectory.permissions.length > 0);
-        }
-
-        // Filter subdirectories based on permissions for non-admins
-        const accessibleDirectories = isAdmin || userHasParentPermission ?
-            subdirectories :
-            subdirectories.filter(dir =>
-                dir.createdBy === userId || // User is the owner
-                (dir.permissions && dir.permissions.length > 0) // User has explicit permission
-            );
-
-        // Get files in the current directory
-        const dbFiles = await db.file.findMany({
-            where: { directory: folderPath },
-            include: {
-                creator: {
-                    select: {
-                        id: true,
-                        username: true,
-                        role: true
-                    }
-                },
-                versions: {
-                    orderBy: { versionNumber: "desc" },
-                    include: {
-                        creator: {
-                            select: {
-                                id: true,
-                                username: true
-                            }
-                        }
-                    }
-                },
-                approval: {
-                    select: {
-                        approvedAt: true,
-                        approver: {
-                            select: {
-                                id: true,
-                                username: true
-                            }
-                        }
-                    }
-                },
-                permissions: {
-                    where: {
-                        userId
-                    }
-                }
-            }
-        });
-
-        // All files in a directory should be accessible if:
-        // 1. User is admin
-        // 2. User is the creator of the directory
-        // 3. User has permission on the directory with cascadeToChildren=true
-        // 4. User has direct permission on the file
-
-        // Non-admins need additional permission checking for files
-        const accessibleFiles = isAdmin || userHasParentPermission ?
-            dbFiles :
-            dbFiles.filter(file =>
-                file.createdBy === userId || // User is the owner
-                (file.permissions && file.permissions.length > 0) // User has explicit permission
-            );
-
-        // Format directory data
-        const directories = accessibleDirectories.map(dir => ({
-            id: dir.id,
-            name: dir.name,
-            path: folderPath ? path.join(folderPath, dir.name) : dir.name,
-            createdAt: dir.createdAt,
-            createdBy: dir.creator ? {
-                id: dir.creator.id,
-                username: dir.creator.username,
-                role: dir.creator.role
-            } : null,
-            permissions: dir.permissions || [],
-            permissionType: dir.permissions.length > 0 ? dir.permissions[0].permissionType : null,
-            // Add a flag to indicate if the current user has permission
-            hasPermission: true, // All directories in this list are accessible
-            isOwner: dir.createdBy === userId
-        }));
-
-        // Format file data
-        const files = accessibleFiles.map(file => ({
-            id: file.id,
-            name: file.name,
-            path: file.path,
-            createdDate: file.createdAt,
-            approvalStatus: file.approvalStatus,
-            uploadedBy: {
-                id: file.creator.id,
-                username: file.creator.username,
-                role: file.creator.role
-            },
-            approvedBy: file.approval?.approver ? {
-                id: file.approval.approver.id,
-                username: file.approval.approver.username
-            } : null,
-            approvedAt: file.approval?.approvedAt || null,
-            versions: file.versions.map(v => ({
-                versionNumber: v.versionNumber,
-                filePath: v.filePath,
-                createdAt: v.createdAt,
-                version: v.versionNumber,
-                createdBy: v.creator?.username || "Unknown"
-            })),
-            permissions: file.permissions || [],
-            permissionType: file.permissions.length > 0 ? file.permissions[0].permissionType : null,
-            // Add a flag to indicate if the current user has permission 
-            hasPermission: true, // All files in this list are accessible
-            isOwner: file.createdBy === userId,
-            // Add a flag to indicate if the user has write permission
-            canEdit: isAdmin ||
-                file.createdBy === userId ||
-                (file.permissions.some(p => p.permissionType === 'WRITE')) ||
-                (userHasParentPermission && currentDirectory.permissions.some(p => p.permissionType === 'WRITE'))
-        }));
-
-        // Check if physical directory exists
-        const fullPath = path.join(ROOT_DIRECTORY, folderPath);
-        const physicalDirectoryExists = fs.existsSync(fullPath);
-
-        // Create directory if it doesn't exist but is in the database
-        if (!physicalDirectoryExists && currentDirectory) {
-            try {
-                fs.mkdirSync(fullPath, { recursive: true });
-                console.log(`Created physical directory: ${fullPath}`);
-            } catch (err) {
-                console.error(`Error creating physical directory: ${err.message}`);
-            }
-        }
-
-        res.status(200).json({
-            currentDirectory: currentDirectory ? {
-                id: currentDirectory.id,
-                name: currentDirectory.name,
-                path: folderPath,
-                createdAt: currentDirectory.createdAt,
-                createdBy: currentDirectory.creator ? {
-                    id: currentDirectory.creator.id,
-                    username: currentDirectory.creator.username,
-                    role: currentDirectory.creator.role
-                } : null,
-                isOwner: currentDirectory.createdBy === userId,
-                permissions: currentDirectory.permissions || [],
-                permissionType: currentDirectory.permissions?.length > 0
-                    ? currentDirectory.permissions[0].permissionType
-                    : null
-            } : {
-                id: null,
-                name: "Root",
-                path: "",
-                createdAt: null,
-                createdBy: null,
-                isOwner: false,
-                permissions: []
-            },
-            parentDirectory,
-            directories,
-            files,
-            userAccess: {
-                isAdmin,
-                userId,
-                hasParentPermission: userHasParentPermission
-            }
-        });
-    } catch (error) {
-        console.error("Error retrieving files:", error);
-        res.status(500).json({ error: "Error retrieving files", details: error.message });
-    }
-};
-
-// Helper function to check if any parent directory grants permission
-async function checkParentDirectoryPermission(dirPath, userId) {
-    if (!dirPath) return false;
-
-    // Split the path into parts
-    const pathParts = dirPath.split('/').filter(Boolean);
-
-    // Check each ancestor directory for permissions
-    for (let i = pathParts.length - 1; i >= 0; i--) {
-        const partialPath = pathParts.slice(0, i).join('/');
-        const dirName = pathParts[i - 1] || pathParts[0];
-
-        const parentDir = await db.directory.findFirst({
-            where: { name: dirName },
-            include: {
-                permissions: {
-                    where: {
-                        userId,
+            // Create the same permissions for the new directory
+            for (const permission of parentPermissions) {
+                await db.permission.create({
+                    data: {
+                        permissionType: permission.permissionType,
+                        resourceType: 'DIRECTORY',
+                        userId: permission.userId,
+                        grantedBy: userId,
+                        directoryId: newDirectory.id,
                         cascadeToChildren: true
                     }
-                }
+                });
             }
-        });
-
-        if (parentDir && parentDir.permissions && parentDir.permissions.length > 0) {
-            return true;
         }
-    }
 
-    return false;
-}
+        res.status(201).json({
+            message: "Directory created successfully",
+            directoryPath: normalizedPath,
+            directory: newDirectory,
+        });
+    } catch (error) {
+        console.error("Error creating directory:", error);
+        
+        // Handle unique constraint violation
+        if (error.code === 'P2002') {
+            return res.status(400).json({ 
+                message: "A directory with this name already exists in this location" 
+            });
+        }
+        
+        res.status(500).json({ message: "Error creating directory", error: error.message });
+    }
+};
 
 export const deleteDirectory = async (req, res) => {
     try {
@@ -551,144 +847,6 @@ export const deleteDirectory = async (req, res) => {
     } catch (error) {
         console.error("Error deleting directory:", error);
         res.status(500).json({ message: "Error deleting directory", error: error.message });
-    }
-};
-
-export const uploadFile = async (req, res) => {
-    try {
-        const { folderPath, description } = req.body;
-        const userId = req.user.userId;
-        const userRole = req.user.role;
-
-        if (!req.file) {
-            return res.status(400).json({ error: "No file uploaded." });
-        }
-
-        const fileSavePath = path.join(ROOT_DIRECTORY, folderPath);
-        const fileSaveVersionPath = path.join(VERSION_DIR, folderPath);
-        const newFilePath = path.join(fileSavePath, req.file.originalname);
-        const versionFilePath = path.join(fileSaveVersionPath, req.file.originalname);
-
-        if (!fs.existsSync(fileSavePath)) {
-            fs.mkdirSync(fileSavePath, { recursive: true });
-        }
-        if (!fs.existsSync(fileSaveVersionPath)) {
-            fs.mkdirSync(fileSaveVersionPath, { recursive: true });
-        }
-
-        let existingFile = await db.file.findUnique({
-            where: { path: newFilePath }
-        });
-
-        let fileId;
-        if (existingFile) {
-            fileId = existingFile.id;
-
-            // Find the latest version of the file
-            const latestVersion = await db.version.findMany({
-                where: { fileId },
-                orderBy: { versionNumber: "desc" },
-                take: 1
-            });
-
-            const newVersionNumber = latestVersion.length ? latestVersion[0].versionNumber + 1 : 1;
-
-            // Fix: Create proper versioned file name
-            const fileExt = path.extname(req.file.originalname); // Get file extension (.txt)
-            const fileName = path.basename(req.file.originalname, fileExt); // Get filename without extension
-            const versionedFileName = `${fileName}_v${newVersionNumber}${fileExt}`; // Create filename_v1.txt
-            const versionedFilePath = path.join(fileSaveVersionPath, versionedFileName);
-
-            // Move the existing file to the versions directory
-            if (fs.existsSync(newFilePath)) {
-                fs.copyFileSync(newFilePath, versionedFilePath); // Copy instead of rename
-            }
-
-            const fileApproval = await db.approval.findUnique({
-                where: { fileId }
-            });
-
-            // Save the version in DB, now including the previous approvedAt and description
-            await db.version.create({
-                data: {
-                    fileId,
-                    filePath: versionedFilePath,
-                    versionNumber: newVersionNumber,
-                    description: existingFile.description,
-                    approvedBy: existingFile?.approvedBy,
-                    approvedAt: fileApproval?.approvedAt || null,
-                    createdAt: existingFile.createdAt,
-                    createdBy: existingFile.createdBy
-                }
-            });
-
-            // Update the existing file record - setting approvedBy and approvedAt to null (via the approval record)
-            await db.file.update({
-                where: { id: fileId },
-                data: {
-                    // Set the approval status to PENDING regardless of user role when updating
-                    approvalStatus: userRole === "ADMIN" ? "APPROVED" : "PENDING",
-                    description: description, // Update description field
-                    createdBy: userId,
-                    // Set approvedBy to null
-                    approvedBy: userRole === "ADMIN" ? userId : null,
-                    createdAt: new Date()
-                }
-            });
-
-            // Update the approval record to set approvedBy and approvedAt to null
-            await db.approval.update({
-                where: { fileId },
-                data: {
-                    approvedBy: null,
-                    approvedAt: null
-                }
-            });
-
-            console.log(`Existing file versioned as: ${versionedFilePath}`);
-        } else {
-            // Determine approval status based on user role
-            const approvalStatus = userRole === "ADMIN" ? "APPROVED" : "PENDING";
-            const approvedBy = userRole === "ADMIN" ? userId : null;
-
-            // Create a new file entry in DB
-            const newFile = await db.file.create({
-                data: {
-                    name: req.file.originalname,
-                    path: newFilePath,
-                    directory: folderPath,
-                    description: description, // Add description field
-                    createdBy: userId,
-                    approvedBy,
-                    approvalStatus
-                }
-            });
-
-            fileId = newFile.id;
-
-            // Create an approval entry
-            await db.approval.create({
-                data: {
-                    fileId,
-                    approvedBy,
-                    approvedAt: approvedBy ? new Date() : null
-                }
-            });
-        }
-
-        // Write the uploaded file
-        fs.writeFileSync(newFilePath, req.file.buffer);
-
-        res.status(201).json({
-            message: "File uploaded successfully",
-            filePath: newFilePath,
-            fileId,
-            description
-        });
-
-    } catch (error) {
-        console.error("Error uploading file:", error);
-        res.status(500).json({ error: "Error uploading file", details: error.message });
     }
 };
 
@@ -1009,11 +1167,3 @@ export const getApprovedList = async (req, res) => {
         res.status(500).json({ error: "Error retrieving approved files", details: error.message });
     }
 };
-
-function getDirectoriesByLocation(location) {
-    return fs.readdirSync(location).filter((file) =>
-        fs.statSync(path.join(location, file)).isDirectory()
-    );
-}
-
-// deleteDirectory()

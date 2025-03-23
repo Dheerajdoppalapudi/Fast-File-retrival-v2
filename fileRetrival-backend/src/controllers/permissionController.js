@@ -176,8 +176,6 @@ export const grantPermission = async (req, res) => {
             create: permissionData
         });
 
-        // console.log("Permission: ", permission)
-
         // If it's a directory and cascadeToChildren is true, grant permissions to all subdirectories and files
         if (resourceType === "DIRECTORY" && (cascadeToChildren !== false)) {
             await cascadePermissions(resourceId, userId, permissionType, granterId);
@@ -208,7 +206,7 @@ async function cascadePermissions(directoryId, userId, permissionType, granterId
 
         // Get all files in this directory
         const files = await db.file.findMany({
-            where: { directory: directoryId }
+            where: { directoryId: directoryId }  // FIXED: Use directoryId instead of directory
         });
 
         // Create permissions for subdirectories
@@ -409,7 +407,7 @@ async function cascadeRevokePermissions(directoryId, userId) {
 
         // Get all files in this directory
         const files = await db.file.findMany({
-            where: { directory: directoryId }
+            where: { directoryId: directoryId }  // FIXED: Use directoryId instead of directory
         });
 
         // Delete permissions for subdirectories
@@ -479,7 +477,8 @@ export const getUserPermissions = async (req, res) => {
                         id: true, 
                         name: true, 
                         path: true,
-                        directory: true
+                        directoryPath: true,  // FIXED: Use directoryPath instead of directory
+                        directoryId: true     // ADDED: Include directoryId
                     }
                 },
                 directory: {
@@ -771,32 +770,54 @@ export const checkPermission = async (req, res) => {
         if (resourceType === "FILE") {
             const file = await db.file.findUnique({
                 where: { id: resourceId },
-                select: { directory: true }
+                select: { directoryId: true }  // FIXED: Use directoryId instead of directory
             });
             
-            if (file) {
-                const directoryPath = file.directory;
-                // Find the directory by path (assuming we have a unique constraint on directory name)
-                const directory = await db.directory.findFirst({
-                    where: { name: directoryPath }
+            if (file && file.directoryId) {
+                // Check permission on the parent directory
+                const directoryPermission = await db.permission.findFirst({
+                    where: {
+                        userId,
+                        directoryId: file.directoryId,
+                        permissionType: requiredPermission === "READ" ? { in: ["READ", "WRITE"] } : "WRITE",
+                        cascadeToChildren: true
+                    }
                 });
 
-                if (directory) {
-                    // Check permission on the parent directory
-                    const directoryPermission = await db.permission.findFirst({
-                        where: {
-                            userId,
-                            directoryId: directory.id,
-                            permissionType: requiredPermission === "READ" ? { in: ["READ", "WRITE"] } : "WRITE"
-                        }
+                if (directoryPermission) {
+                    return res.status(200).json({ 
+                        hasPermission: true,
+                        message: `You have ${directoryPermission.permissionType} permission to the parent directory`
                     });
+                }
+                
+                // If we didn't find a direct permission on the directory, check parent directories recursively
+                const hasParentPermission = await checkParentDirectoryPermission(file.directoryId, userId, requiredPermission);
+                
+                if (hasParentPermission) {
+                    return res.status(200).json({ 
+                        hasPermission: true,
+                        message: "You have inherited permission from a parent directory"
+                    });
+                }
+            }
+        }
 
-                    if (directoryPermission) {
-                        return res.status(200).json({ 
-                            hasPermission: true,
-                            message: `You have ${directoryPermission.permissionType} permission to the parent directory`
-                        });
-                    }
+        // For directories, check parent directory permissions recursively
+        if (resourceType === "DIRECTORY") {
+            const directory = await db.directory.findUnique({
+                where: { id: resourceId },
+                select: { parentId: true }
+            });
+            
+            if (directory && directory.parentId) {
+                const hasParentPermission = await checkParentDirectoryPermission(directory.parentId, userId, requiredPermission);
+                
+                if (hasParentPermission) {
+                    return res.status(200).json({ 
+                        hasPermission: true,
+                        message: "You have inherited permission from a parent directory"
+                    });
                 }
             }
         }
@@ -814,3 +835,35 @@ export const checkPermission = async (req, res) => {
         });
     }
 };
+
+/**
+ * Recursive helper function to check parent directory permissions
+ */
+async function checkParentDirectoryPermission(directoryId, userId, requiredPermission) {
+    if (!directoryId) return false;
+    
+    // Check permission for this directory
+    const permission = await db.permission.findFirst({
+        where: {
+            userId,
+            directoryId,
+            permissionType: requiredPermission === "READ" ? { in: ["READ", "WRITE"] } : "WRITE",
+            cascadeToChildren: true
+        }
+    });
+    
+    if (permission) return true;
+    
+    // Get parent directory
+    const directory = await db.directory.findUnique({
+        where: { id: directoryId },
+        select: { parentId: true }
+    });
+    
+    // If it has a parent, recursively check that
+    if (directory && directory.parentId) {
+        return await checkParentDirectoryPermission(directory.parentId, userId, requiredPermission);
+    }
+    
+    return false;
+}
