@@ -42,6 +42,7 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
 
   return (
     <Sider
+      trigger={null}
       collapsible
       collapsed={collapsed}
       onCollapse={setCollapsed}
@@ -53,10 +54,14 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
         left: 0,
         top: 0,
         bottom: 0,
-        backgroundColor: isDarkMode ? '#202021' : '#fff',
-        borderRight: isDarkMode ? '1px solid #313130' : '1px solid #f0f0f0',
-        zIndex: 2, // Ensure sidebar is above other content
-        paddingBottom: "80px" // Add extra padding at the bottom
+        // Solid colors as specified
+        backgroundColor: isDarkMode ? '#303131' : '#EFF2F5',
+        borderRight: isDarkMode ? '1px solid #313130' : '1px solid #d9d9d9',
+        boxShadow: isDarkMode 
+          ? '1px 0 3px rgba(0, 0, 0, 0.3)' 
+          : '1px 0 3px rgba(0, 0, 0, 0.05)',
+        zIndex: 2, 
+        paddingBottom: "80px"
       }}
       theme={isDarkMode ? 'dark' : 'light'}
     >
@@ -68,6 +73,7 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
           justifyContent: collapsed ? "center" : "flex-start",
           padding: collapsed ? "0" : "0 16px",
           borderBottom: isDarkMode ? '1px solid #313130' : '1px solid #f0f0f0',
+          backgroundColor: isDarkMode ? '#262828' : '#E6EBF0',
         }}
       >
         {collapsed ? (
@@ -90,6 +96,7 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
           flexDirection: "column",
           alignItems: "center",
           gap: "8px",
+          backgroundColor: isDarkMode ? '#262828' : '#E6EBF0',
         }}
       >
         <Avatar
@@ -135,26 +142,40 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
           backgroundColor: 'transparent',
           border: 'none'
         }}
-      >
-        <Menu.Item key="files" icon={<FileOutlined />} onClick={() => navigate("/")}>
-          Files
-        </Menu.Item>
-        <Menu.Item key="compare" icon={<DiffOutlined />} onClick={() => navigate("/compare")}>
-          Compare
-        </Menu.Item>
-        <Menu.Item key="approvals" icon={<AuditOutlined />} onClick={() => navigate("/approvals")}>
-          Approvals
-        </Menu.Item>
-        <Menu.Item key="dashboard" icon={<AppstoreOutlined />} onClick={() => navigate("/dashboard")}>
-          Dashboard
-        </Menu.Item>
-      </Menu>
+        items={[
+          {
+            key: "files",
+            icon: <FileOutlined />,
+            label: "Files",
+            onClick: () => navigate("/")
+          },
+          {
+            key: "compare",
+            icon: <DiffOutlined />,
+            label: "Compare",
+            onClick: () => navigate("/compare")
+          },
+          {
+            key: "approvals",
+            icon: <AuditOutlined />,
+            label: "Approvals",
+            onClick: () => navigate("/approvals")
+          },
+          {
+            key: "dashboard",
+            icon: <AppstoreOutlined />,
+            label: "Dashboard",
+            onClick: () => navigate("/dashboard")
+          }
+        ]}
+      />
 
       <div style={{
         position: "absolute",
         bottom: "32px",
         width: "100%",
-        padding: "0 16px 16px 16px"
+        padding: "0 16px 16px 16px",
+        backgroundColor: isDarkMode ? '#262828' : '#E6EBF0',
       }}>
         <Divider style={{ margin: "16px 0", borderColor: isDarkMode ? '#313130' : '#f0f0f0' }} />
 
@@ -196,7 +217,7 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
                 width: "100%",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center", // Changed from "flex-start" to "center"
+                justifyContent: "center",
                 color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)',
                 padding: "4px 16px"
               }}

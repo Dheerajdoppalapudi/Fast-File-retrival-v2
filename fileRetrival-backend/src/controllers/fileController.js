@@ -855,51 +855,148 @@ export const getApprovalList = async (req, res) => {
         const userId = req.user.userId;
         const userRole = req.user.role;
 
-        if (userRole !== "ADMIN") {
-            return res.status(403).json({ error: "Access denied. Only ADMIN can view approvals." });
+        // Check if user has permission to view approvals
+        if (userRole !== "ADMIN" && userRole !== "EDITOR") {
+            return res.status(403).json({ error: "Access denied. Only ADMIN and EDITOR can view approvals." });
         }
 
-        const pendingApprovals = await db.file.findMany({
-            where: {
-                approvalStatus: "PENDING"
-            },
-            include: {
-                creator: {
-                    select: { username: true }
+        // Different query for ADMIN vs. EDITOR
+        let pendingApprovals;
+        
+        if (userRole === "ADMIN") {
+            // Admins can see all pending approvals
+            pendingApprovals = await db.file.findMany({
+                where: {
+                    approvalStatus: "PENDING"
                 },
-                approval: {
-                    include: {
-                        approver: {
-                            select: { 
-                                id: true,
-                                username: true 
+                include: {
+                    creator: {
+                        select: { username: true }
+                    },
+                    directory: {  // Include directory information
+                        select: {
+                            id: true,
+                            name: true,
+                            path: true,
+                            createdBy: true
+                        }
+                    },
+                    approval: {
+                        include: {
+                            approver: {
+                                select: { 
+                                    id: true,
+                                    username: true 
+                                }
                             }
                         }
-                    }
-                },
-                versions: {
-                    orderBy: {
-                        versionNumber: 'desc'
                     },
-                    include: {
-                        approver: {
-                            select: { 
-                                id: true,
-                                username: true 
+                    versions: {
+                        orderBy: {
+                            versionNumber: 'desc'
+                        },
+                        include: {
+                            approver: {
+                                select: { 
+                                    id: true,
+                                    username: true 
+                                }
                             }
                         }
                     }
                 }
-            }
-        });
-
-        // console.log("pendingApprovals: ", pendingApprovals)
+            });
+        } else {
+            // EDITOR: Find directories where the user is the creator or has permissions
+            const userDirectories = await db.directory.findMany({
+                where: {
+                    OR: [
+                        { createdBy: userId },
+                        {
+                            permissions: {
+                                some: {
+                                    userId: userId,
+                                    permissionType: 'WRITE'
+                                }
+                            }
+                        }
+                    ]
+                },
+                select: { id: true, path: true }
+            });
+            
+            // Get user's directory IDs for direct matching
+            const userDirectoryIds = userDirectories.map(dir => dir.id);
+            
+            // For path-based matching, we'll use multiple OR conditions
+            const pathConditions = userDirectories.map(dir => ({
+                directoryPath: {
+                    startsWith: dir.path
+                }
+            }));
+            
+            // Create the OR array with directoryId condition and path conditions
+            const orConditions = [
+                {
+                    directoryId: {
+                        in: userDirectoryIds.length > 0 ? userDirectoryIds : [""]
+                    }
+                },
+                ...pathConditions
+            ];
+            
+            // Get files that are in those directories or subdirectories
+            pendingApprovals = await db.file.findMany({
+                where: {
+                    approvalStatus: "PENDING",
+                    OR: orConditions
+                },
+                include: {
+                    creator: {
+                        select: { username: true }
+                    },
+                    directory: {
+                        select: {
+                            id: true,
+                            name: true,
+                            path: true,
+                            createdBy: true
+                        }
+                    },
+                    approval: {
+                        include: {
+                            approver: {
+                                select: { 
+                                    id: true,
+                                    username: true 
+                                }
+                            }
+                        }
+                    },
+                    versions: {
+                        orderBy: {
+                            versionNumber: 'desc'
+                        },
+                        include: {
+                            approver: {
+                                select: { 
+                                    id: true,
+                                    username: true 
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
 
         const approvalList = pendingApprovals.map(file => ({
             id: file.id,
             name: file.name,
-            description: file.description, // Added description field
+            description: file.description,
             path: file.path,
+            directoryPath: file.directory?.path || null,
+            directoryName: file.directory?.name || null,
             uploadedBy: file.creator.username,
             createdAt: file.createdAt,
             approvalStatus: file.approvalStatus,
@@ -907,10 +1004,11 @@ export const getApprovalList = async (req, res) => {
             approverName: file.approval?.approver?.username || null,
             approvedAt: file.approval?.approvedAt || null,
             hasVersions: file.versions.length > 0,
+            canApprove: userRole === "ADMIN" || file.directory?.createdBy === userId,
             versions: file.versions.map(version => ({
                 id: version.id,
                 path: version.filePath,
-                description: version.description, // Added version description field
+                description: version.description,
                 versionNumber: version.versionNumber,
                 createdAt: version.createdAt, 
                 approvedBy: version.approvedBy || null,
@@ -918,7 +1016,6 @@ export const getApprovalList = async (req, res) => {
                 approvedAt: version.approvedAt || null
             }))
         }));
-
 
         res.status(200).json({ approvals: approvalList });
     } catch (error) {

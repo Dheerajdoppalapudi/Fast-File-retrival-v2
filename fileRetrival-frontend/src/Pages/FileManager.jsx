@@ -147,45 +147,14 @@ const DirectoryInfo = ({ directory, isDarkMode }) => {
   );
 };
 
-const FileManagerControls = ({ currentPath, searchQuery, setSearchQuery, setCurrentPath, isDarkMode, fetchFiles }) => (
-  <div style={{ marginBottom: '16px' }}>
-    <Row gutter={16} align="middle" style={{ marginBottom: '12px' }}>
-      <Col flex="auto">
-        <BreadcrumbNav
-          currentPath={currentPath}
-          onNavigate={(index) => setCurrentPath(currentPath.slice(0, index))}
-          isDarkMode={isDarkMode}
-        />
-      </Col>
-      <Col>
-        <Tooltip title="Refresh">
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={fetchFiles}
-            size="middle"
-            style={{ borderRadius: '2px' }}
-          />
-        </Tooltip>
-      </Col>
-    </Row>
-    <Row>
-      <Col xs={24}>
-        <SearchBar
-          searchQuery={searchQuery}
-          onSearch={setSearchQuery}
-          style={{ width: '100%' }}
-          isDarkMode={isDarkMode}
-        />
-      </Col>
-    </Row>
-  </div>
-);
-
+// Updated FileManagerActions component with search bar
 const FileManagerActions = ({
   setIsFolderModalVisible,
   setFileUploadModalVisible,
   canUpload,
-  isDarkMode
+  isDarkMode,
+  searchQuery,
+  setSearchQuery
 }) => {
   const actionTitle = !canUpload ? "You need write permission to upload files" : "";
 
@@ -194,33 +163,41 @@ const FileManagerActions = ({
       marginBottom: "16px",
       padding: "0",
     }}>
-      <Row gutter={16} justify="space-between" align="middle">
+      <Row gutter={16} align="middle">
         <Col>
-          <Tooltip title={!canUpload ? "You need write permission to create folders" : ""}>
-            <Button
-              type="primary"
-              icon={<FolderAddOutlined />}
-              onClick={() => setIsFolderModalVisible(true)}
-              disabled={!canUpload}
-              style={{ borderRadius: '2px' }}
-            >
-              Create Folder
-            </Button>
-          </Tooltip>
+          <Space size="small">
+            <Tooltip title={!canUpload ? "You need write permission to create folders" : ""}>
+              <Button
+                type="primary"
+                icon={<FolderAddOutlined />}
+                onClick={() => setIsFolderModalVisible(true)}
+                disabled={!canUpload}
+                style={{ borderRadius: '2px' }}
+              >
+                Create Folder
+              </Button>
+            </Tooltip>
+
+            <Tooltip title={actionTitle}>
+              <Button
+                icon={<UploadOutlined />}
+                onClick={() => setFileUploadModalVisible(true)}
+                disabled={!canUpload}
+                style={{ borderRadius: '2px' }}
+              >
+                Upload File
+              </Button>
+            </Tooltip>
+          </Space>
         </Col>
 
-        <Col>
-          <Tooltip title={actionTitle}>
-            <Button
-              // type="primary"
-              icon={<UploadOutlined />}
-              onClick={() => setFileUploadModalVisible(true)}
-              disabled={!canUpload}
-              style={{ borderRadius: '2px' }}
-            >
-              Upload File
-            </Button>
-          </Tooltip>
+        <Col flex="auto">
+          <SearchBar
+            searchQuery={searchQuery}
+            onSearch={setSearchQuery}
+            style={{ width: '100%' }}
+            isDarkMode={isDarkMode}
+          />
         </Col>
       </Row>
     </div>
@@ -576,14 +553,30 @@ const FileManager = () => {
         </Title>
       </div>
 
-      <FileManagerControls
-        currentPath={currentPath}
-        setSearchQuery={handleSearchChange}
-        searchQuery={searchQuery}
-        setCurrentPath={setCurrentPath}
-        isDarkMode={isDarkMode}
-        fetchFiles={fetchFiles}
-      />
+      {/* Breadcrumb navigation and refresh button */}
+      <div style={{ marginBottom: '16px' }}>
+        <Row gutter={16} align="middle">
+          <Col flex="auto">
+            <BreadcrumbNav
+              currentPath={currentPath}
+              onNavigate={(index) => setCurrentPath(currentPath.slice(0, index))}
+              isDarkMode={isDarkMode}
+            />
+          </Col>
+          <Col>
+            <Tooltip title="Refresh">
+              <Button
+                icon={<ReloadOutlined />}
+                onClick={fetchFiles}
+                size="middle"
+                style={{ borderRadius: '2px' }}
+              >
+                Refresh
+              </Button>
+            </Tooltip>
+          </Col>
+        </Row>
+      </div>
 
       {currentDirectoryInfo && (
         <DirectoryInfo
@@ -598,17 +591,19 @@ const FileManager = () => {
         opacity: 0.6
       }} />
 
+      {/* File manager actions with search bar in the same row */}
       <FileManagerActions
         setIsFolderModalVisible={setIsFolderModalVisible}
         setFileUploadModalVisible={setFileUploadModalVisible}
         canUpload={canUpload}
         isDarkMode={isDarkMode}
+        searchQuery={searchQuery}
+        setSearchQuery={handleSearchChange}
       />
 
       <div style={{ 
         marginTop: 0, 
         minHeight: 300,
-        backgroundColor: isDarkMode ? '' : '',
         borderRadius: '2px',
       }}>
         {loading ? (
