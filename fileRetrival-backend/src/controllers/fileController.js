@@ -1038,14 +1038,12 @@ export const approveFile = async (req, res) => {
         const userId = req.user.userId;
         const userRole = req.user.role;
 
-        if (userRole !== "ADMIN") {
-            return res.status(403).json({ error: "Access denied. Only ADMIN can approve files." });
-        }
-
+        // Get the file with directory information
         const file = await db.file.findUnique({
             where: { id: fileId },
             include: {
-                creator: { select: { username: true } }
+                creator: { select: { username: true } },
+                directory: { select: { id: true, createdBy: true } }
             }
         });
 
@@ -1057,6 +1055,19 @@ export const approveFile = async (req, res) => {
             return res.status(400).json({
                 error: "File cannot be approved.",
                 message: `Current status is ${file.approvalStatus}.`
+            });
+        }
+
+        // Check if user has permission to approve
+        // ADMIN can approve any file
+        // EDITOR can only approve files in directories they created
+        const canApprove = 
+            userRole === "ADMIN" || 
+            (userRole === "EDITOR" && file.directory && file.directory.createdBy === userId);
+
+        if (!canApprove) {
+            return res.status(403).json({ 
+                error: "Access denied. You don't have permission to approve this file." 
             });
         }
 
@@ -1085,7 +1096,7 @@ export const approveFile = async (req, res) => {
             }
         });
 
-        const admin = await db.user.findUnique({
+        const approver = await db.user.findUnique({
             where: { id: userId },
             select: { username: true }
         });
@@ -1114,14 +1125,13 @@ export const rejectFile = async (req, res) => {
         const userId = req.user.userId;
         const userRole = req.user.role;
 
-        // Check if user has admin role
-        if (userRole !== "ADMIN") {
-            return res.status(403).json({ error: "Access denied. Only ADMIN can reject files." });
-        }
-
-        // Check if file exists and is pending approval
+        // Get the file with directory information
         const file = await db.file.findUnique({
-            where: { id: fileId }
+            where: { id: fileId },
+            include: {
+                creator: { select: { username: true } },
+                directory: { select: { id: true, createdBy: true } }
+            }
         });
 
         if (!file) {
@@ -1135,22 +1145,33 @@ export const rejectFile = async (req, res) => {
             });
         }
 
+        // Check if user has permission to reject
+        // ADMIN can reject any file
+        // EDITOR can only reject files in directories they created
+        const canReject = 
+            userRole === "ADMIN" || 
+            (userRole === "EDITOR" && file.directory && file.directory.createdBy === userId);
+
+        if (!canReject) {
+            return res.status(403).json({ 
+                error: "Access denied. You don't have permission to reject this file." 
+            });
+        }
+
         // Update file status to REJECTED
         const updatedFile = await db.file.update({
             where: { id: fileId },
             data: {
-                approvalStatus: "REJECTED"
+                approvalStatus: "REJECTED",
+                approvedBy: userId // Store who rejected it in the same field
             },
             include: {
-                user: {
-                    select: { username: true, email: true }
-                }
+                creator: { select: { username: true } },
+                approver: { select: { username: true } }
             }
         });
 
-        // Optionally record who rejected it
-        // Note: In some systems, rejections might not be tracked the same way as approvals
-        // If you want to track rejections in the Approval table:
+        // Record the rejection in the Approval table
         const approval = await db.approval.upsert({
             where: { fileId },
             create: {
@@ -1164,8 +1185,8 @@ export const rejectFile = async (req, res) => {
             }
         });
 
-        // Get admin username for response
-        const admin = await db.user.findUnique({
+        // Get username for response
+        const rejecter = await db.user.findUnique({
             where: { id: userId },
             select: { username: true }
         });
@@ -1177,8 +1198,8 @@ export const rejectFile = async (req, res) => {
                 name: updatedFile.name,
                 path: updatedFile.path,
                 approvalStatus: updatedFile.approvalStatus,
-                uploadedBy: updatedFile.user.username,
-                rejectedBy: admin.username,
+                uploadedBy: updatedFile.creator.username,
+                rejectedBy: rejecter.username,
                 rejectedAt: approval.approvedAt
             }
         });
