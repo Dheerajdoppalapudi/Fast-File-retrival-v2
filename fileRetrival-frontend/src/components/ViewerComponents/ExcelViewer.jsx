@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Table, Tabs, Spin, Result, Typography, Select, Input } from 'antd';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Table, Spin, Result, Typography, Select, Input, theme, notification } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
 
-const { TabPane } = Tabs;
 const { Text } = Typography;
 const { Option } = Select;
 
@@ -12,54 +11,117 @@ const ExcelViewer = ({ fileContent, fileName }) => {
   const [sheets, setSheets] = useState([]);
   const [activeSheet, setActiveSheet] = useState(null);
   const [tableData, setTableData] = useState([]);
+  const [originalData, setOriginalData] = useState([]); // Store original data for filtering
   const [columns, setColumns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchText, setSearchText] = useState('');
   const [rowsPerPage, setRowsPerPage] = useState(50);
   
+  // Get theme token to use theme-aware colors
+  const { token } = theme.useToken();
+
+  // Safely escape special regex characters in search text
+  const escapeRegExp = (string) => {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  };
+
   // Parse Excel data on component mount
   useEffect(() => {
-    try {
-      // Convert base64 to array buffer
-      const binaryString = window.atob(fileContent);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      
-      // Parse the workbook
-      const wb = XLSX.read(bytes, { type: 'array' });
-      setWorkbook(wb);
-      
-      // Get sheet names
-      const sheetNames = wb.SheetNames;
-      setSheets(sheetNames);
-      
-      // Set active sheet to first sheet by default
-      if (sheetNames.length > 0) {
+    let isMounted = true;
+    
+    const parseExcel = async () => {
+      try {
+        // For large files, use a more efficient approach
+        let bytes;
+        
+        try {
+          // Convert base64 to array buffer
+          const binaryString = window.atob(fileContent);
+          bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+        } catch (e) {
+          throw new Error('Invalid file format or encoding. The file must be a valid base64-encoded Excel file.');
+        }
+        
+        // Parse the workbook
+        const wb = XLSX.read(bytes, { 
+          type: 'array',
+          cellStyles: true,
+          cellDates: true,
+          cellNF: true
+        });
+        
+        if (!isMounted) return;
+        
+        setWorkbook(wb);
+        
+        // Get sheet names
+        const sheetNames = wb.SheetNames;
+        
+        if (sheetNames.length === 0) {
+          throw new Error('No sheets found in this Excel file');
+        }
+        
+        setSheets(sheetNames);
+        
+        // Set active sheet to first sheet by default
         setActiveSheet(sheetNames[0]);
-        loadSheetData(wb, sheetNames[0]);
-      } else {
-        setError('No sheets found in this Excel file');
-        setLoading(false);
+        await loadSheetData(wb, sheetNames[0]);
+      } catch (err) {
+        console.error('Error parsing Excel file:', err);
+        if (isMounted) {
+          setError(err.message || 'Failed to parse Excel file. The file may be corrupted or in an unsupported format.');
+          setLoading(false);
+        }
       }
-    } catch (err) {
-      console.error('Error parsing Excel file:', err);
-      setError('Failed to parse Excel file. The file may be corrupted or in an unsupported format.');
-      setLoading(false);
-    }
+    };
+    
+    parseExcel();
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
   }, [fileContent]);
   
   // Load data from a specific sheet
-  const loadSheetData = (wb, sheetName) => {
+  const loadSheetData = useCallback(async (wb, sheetName) => {
     try {
-      // Convert sheet to JSON
+      // Convert sheet to JSON with merged cells handling
       const sheet = wb.Sheets[sheetName];
+      
+      // Get merge cell info
+      const merges = sheet['!merges'] || [];
+      
+      // Pre-process merged cells
+      const mergeMap = {};
+      
+      merges.forEach(merge => {
+        const { s, e } = merge; // start and end cells
+        
+        // Process each cell in the merged range
+        for (let r = s.r; r <= e.r; r++) {
+          for (let c = s.c; c <= e.c; c++) {
+            // Skip the top-left cell (that's the one with actual content)
+            if (r === s.r && c === s.c) continue;
+            
+            // Mark other cells as merged and point to the top-left cell
+            const cellRef = XLSX.utils.encode_cell({ r, c });
+            const masterCellRef = XLSX.utils.encode_cell({ r: s.r, c: s.c });
+            mergeMap[cellRef] = masterCellRef;
+          }
+        }
+      });
+      
+      // Convert to JSON with headers
       const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
       
       if (jsonData.length === 0) {
         setTableData([]);
+        setOriginalData([]);
         setColumns([]);
         setLoading(false);
         return;
@@ -87,17 +149,25 @@ const ExcelViewer = ({ fileContent, fileName }) => {
         },
         sortDirections: ['ascend', 'descend'],
         render: (text) => {
-          if (searchText && text && text.toString().includes(searchText)) {
-            const parts = text.toString().split(new RegExp(`(${searchText})`, 'gi'));
-            return (
-              <span>
-                {parts.map((part, i) => 
-                  part.toLowerCase() === searchText.toLowerCase() 
-                    ? <span key={i} style={{ backgroundColor: '#ffcf40' }}>{part}</span> 
-                    : part
-                )}
-              </span>
-            );
+          if (searchText && text && text.toString().toLowerCase().includes(searchText.toLowerCase())) {
+            try {
+              const escapedSearchText = escapeRegExp(searchText);
+              const regex = new RegExp(`(${escapedSearchText})`, 'gi');
+              const parts = text.toString().split(regex);
+              
+              return (
+                <span>
+                  {parts.map((part, i) => 
+                    part.toLowerCase() === searchText.toLowerCase() 
+                      ? <span key={i} style={{ backgroundColor: token.colorWarning, color: token.colorTextLightSolid }}>{part}</span> 
+                      : part
+                  )}
+                </span>
+              );
+            } catch (e) {
+              // Fallback if regex fails
+              return text;
+            }
           }
           return text;
         }
@@ -112,24 +182,21 @@ const ExcelViewer = ({ fileContent, fileName }) => {
         return dataObj;
       });
       
-      // Filter by search text if provided
-      const filteredData = searchText 
-        ? tableDataSource.filter(row => 
-            Object.values(row).some(val => 
-              val && val.toString().toLowerCase().includes(searchText.toLowerCase())
-            )
-          )
-        : tableDataSource;
-      
       setColumns(tableColumns);
-      setTableData(filteredData);
+      setOriginalData(tableDataSource);
+      setTableData(tableDataSource);
       setLoading(false);
     } catch (err) {
       console.error('Error loading sheet data:', err);
-      setError(`Failed to load data from sheet "${sheetName}"`);
+      notification.error({
+        message: 'Error loading sheet',
+        description: `Failed to load data from sheet "${sheetName}": ${err.message}`,
+        duration: 5
+      });
+      setError(`Failed to load data from sheet "${sheetName}": ${err.message}`);
       setLoading(false);
     }
-  };
+  }, [searchText, token.colorWarning, token.colorTextLightSolid]);
   
   // Handle sheet change
   const handleSheetChange = (sheetName) => {
@@ -139,14 +206,27 @@ const ExcelViewer = ({ fileContent, fileName }) => {
     loadSheetData(workbook, sheetName);
   };
   
-  // Handle search
-  const handleSearch = (value) => {
+  // Handle search - use existing data instead of reloading
+  const handleSearch = useCallback((value) => {
     setSearchText(value);
     
-    if (workbook && activeSheet) {
-      loadSheetData(workbook, activeSheet);
+    if (originalData.length > 0) {
+      if (!value) {
+        // If search is cleared, show all data
+        setTableData(originalData);
+        return;
+      }
+      
+      // Filter the existing data without reloading the sheet
+      const filteredData = originalData.filter(row => 
+        Object.values(row).some(val => 
+          val && val.toString().toLowerCase().includes(value.toLowerCase())
+        )
+      );
+      
+      setTableData(filteredData);
     }
-  };
+  }, [originalData]);
   
   // Display error if any
   if (error) {
@@ -170,8 +250,20 @@ const ExcelViewer = ({ fileContent, fileName }) => {
         </div>
       ) : (
         <div>
-          <div style={{ padding: '10px', background: '#f0f2f5', borderRadius: '4px', marginBottom: '10px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+          <div style={{ 
+            padding: '10px', 
+            background: token.colorBgElevated, 
+            borderRadius: '4px', 
+            marginBottom: '10px',
+            border: `1px solid ${token.colorBorderSecondary}`
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              marginBottom: '10px',
+              flexWrap: 'wrap',
+              gap: '10px'
+            }}>
               <div>
                 <Text strong>Sheet: </Text>
                 <Select 
@@ -222,7 +314,17 @@ const ExcelViewer = ({ fileContent, fileName }) => {
             size="small"
             scroll={{ x: 'max-content', y: 400 }}
             bordered
+            locale={{ emptyText: tableData.length === 0 ? 'No data found' : (searchText ? 'No matching results' : 'No data') }}
+            onChange={(pagination, filters, sorter) => {
+              // Keep track of sorted/filtered state if needed
+            }}
           />
+          
+          {tableData.length === 0 && originalData.length > 0 && searchText && (
+            <div style={{ textAlign: 'center', marginTop: '20px' }}>
+              <Text type="secondary">No matches found for "{searchText}"</Text>
+            </div>
+          )}
         </div>
       )}
     </div>

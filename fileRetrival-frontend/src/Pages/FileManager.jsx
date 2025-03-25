@@ -568,7 +568,9 @@ const FileManager = () => {
               <Button
                 icon={<ReloadOutlined />}
                 onClick={fetchFiles}
-                size="middle"
+                // size="middle"
+                size="small"
+                type="default"
                 style={{ borderRadius: '2px' }}
               >
                 Refresh

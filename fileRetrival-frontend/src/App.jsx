@@ -1,6 +1,6 @@
 import React, { useEffect, useContext, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
-import { Layout, Menu, Typography, Avatar, Divider, Switch, Space, Button, Tooltip } from "antd";
+import { Layout, Menu, Typography, Avatar, Divider, Switch, Button, Tooltip } from "antd";
 import {
   FileOutlined,
   DiffOutlined,
@@ -45,102 +45,72 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
       trigger={null}
       collapsible
       collapsed={collapsed}
-      onCollapse={setCollapsed}
-      width={240}
+      width={220}
+      theme={isDarkMode ? 'dark' : 'light'}
       style={{
-        overflow: 'auto',
         height: '100vh',
         position: 'fixed',
         left: 0,
         top: 0,
-        bottom: 0,
-        // Solid colors as specified
-        backgroundColor: isDarkMode ? '#303131' : '#EFF2F5',
-        borderRight: isDarkMode ? '1px solid #313130' : '1px solid #d9d9d9',
-        boxShadow: isDarkMode 
-          ? '1px 0 3px rgba(0, 0, 0, 0.3)' 
-          : '1px 0 3px rgba(0, 0, 0, 0.05)',
-        zIndex: 2, 
-        paddingBottom: "80px"
+        zIndex: 2,
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+        backgroundColor: isDarkMode ? '#313130' : '#e8ecf0',
       }}
-      theme={isDarkMode ? 'dark' : 'light'}
     >
-      <div
-        style={{
-          height: "64px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: collapsed ? "center" : "flex-start",
-          padding: collapsed ? "0" : "0 16px",
-          borderBottom: isDarkMode ? '1px solid #313130' : '1px solid #f0f0f0',
-          backgroundColor: isDarkMode ? '#262828' : '#E6EBF0',
-        }}
-      >
-        {collapsed ? (
-          <Typography.Title level={4} style={{ margin: 0, color: "#1890ff" }}>
-            DS
-          </Typography.Title>
-        ) : (
-          <Typography.Title level={4} style={{ margin: 0, color: "#1890ff" }}>
-            DocSystem
-          </Typography.Title>
-        )}
+      {/* App Logo */}
+      <div className="logo" style={{ 
+        height: "64px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        borderBottom: isDarkMode ? '1px solid #3f3f3f' : '1px solid #d0d0d0',
+        backgroundColor: isDarkMode ? '#2c2c2b' : '#e0e4ea'
+      }}>
+        <Typography.Title level={4} style={{ 
+          margin: 0, 
+          color: "#1890ff",
+          fontSize: collapsed ? '16px' : '20px'
+        }}>
+          {collapsed ? "DS" : "DocSystem"}
+        </Typography.Title>
       </div>
 
-      <div
-        style={{
-          padding: collapsed ? "16px 8px" : "16px",
-          textAlign: "center",
-          borderBottom: isDarkMode ? '1px solid #313130' : '1px solid #f0f0f0',
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "8px",
-          backgroundColor: isDarkMode ? '#262828' : '#E6EBF0',
-        }}
-      >
+      {/* User Profile */}
+      <div className="sidebar-user" style={{ 
+        padding: "16px 0",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        borderBottom: isDarkMode ? '1px solid #3f3f3f' : '1px solid #d0d0d0'
+      }}>
         <Avatar
-          size={collapsed ? "large" : 64}
-          style={{
-            backgroundColor: "#1890ff",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
+          size={collapsed ? 36 : 56}
+          style={{ backgroundColor: "#1890ff" }}
         >
           {user?.username?.charAt(0).toUpperCase() || <UserOutlined />}
         </Avatar>
 
         {!collapsed && (
-          <>
-            <Text
-              strong
-              style={{
-                color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
-                fontSize: "14px",
-              }}
-            >
+          <div style={{ textAlign: "center", marginTop: "8px" }}>
+            <Text strong style={{ color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)' }}>
               {user?.username}
             </Text>
-            <Text
-              style={{
-                color: isDarkMode ? 'rgba(255, 255, 255, 0.45)' : 'rgba(0, 0, 0, 0.45)',
-                fontSize: "12px",
-              }}
-            >
+            <br />
+            <Text style={{ color: isDarkMode ? 'rgba(255, 255, 255, 0.45)' : 'rgba(0, 0, 0, 0.45)', fontSize: "12px" }}>
               {user?.role}
             </Text>
-          </>
+          </div>
         )}
       </div>
 
+      {/* Navigation Menu */}
       <Menu
         theme={isDarkMode ? 'dark' : 'light'}
         mode="inline"
         selectedKeys={[selectedKey]}
-        style={{
-          backgroundColor: 'transparent',
-          border: 'none'
+        style={{ 
+          borderRight: 0,
+          backgroundColor: isDarkMode ? '#313130' : '#e8ecf0'
         }}
         items={[
           {
@@ -170,61 +140,48 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
         ]}
       />
 
-      <div style={{
-        position: "absolute",
-        bottom: "32px",
+      {/* Bottom Controls */}
+      <div className="sidebar-footer" style={{ 
+        position: "absolute", 
+        bottom: 0, 
         width: "100%",
-        padding: "0 16px 16px 16px",
-        backgroundColor: isDarkMode ? '#262828' : '#E6EBF0',
+        padding: "16px 0",
+        borderTop: isDarkMode ? '1px solid #3f3f3f' : '1px solid #d0d0d0',
+        backgroundColor: isDarkMode ? '#313130' : '#e8ecf0',
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "8px"
       }}>
-        <Divider style={{ margin: "16px 0", borderColor: isDarkMode ? '#313130' : '#f0f0f0' }} />
+        <Switch
+          checkedChildren={<BulbFilled />}
+          unCheckedChildren={<BulbOutlined />}
+          checked={isDarkMode}
+          onChange={toggleTheme}
+        />
 
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>
-          <Switch
-            checkedChildren={<BulbFilled />}
-            unCheckedChildren={<BulbOutlined />}
-            checked={isDarkMode}
-            onChange={toggleTheme}
-          />
-        </div>
-
-        {/* Minimalist logout button that adapts to sidebar collapsed state */}
         {collapsed ? (
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            <Tooltip title="Logout" placement="right">
-              <Button
-                type="text"
-                icon={<LogoutOutlined />}
-                onClick={handleLogout}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "4px 16px",
-                  color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)'
-                }}
-              />
-            </Tooltip>
-          </div>
-        ) : (
-          <div style={{ display: "flex", justifyContent: "center" }}>
+          <Tooltip title="Logout" placement="right">
             <Button
               type="text"
               icon={<LogoutOutlined />}
               onClick={handleLogout}
               style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
                 color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)',
-                padding: "4px 16px"
               }}
-            >
-              Logout
-            </Button>
-          </div>
+            />
+          </Tooltip>
+        ) : (
+          <Button
+            type="text"
+            icon={<LogoutOutlined />}
+            onClick={handleLogout}
+            style={{
+              color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)',
+            }}
+          >
+            Logout
+          </Button>
         )}
       </div>
     </Sider>
@@ -246,24 +203,18 @@ const AppContent = () => {
       )}
 
       <Layout style={{
-        marginLeft: !hideNavbar && user ? (collapsed ? 80 : 240) : 0,
+        marginLeft: !hideNavbar && user ? (collapsed ? 80 : 220) : 0,
         transition: 'all 0.2s',
-        backgroundColor: isDarkMode ? '#202021' : '#f0f2f5'
+        backgroundColor: isDarkMode ? '#161617' : '#f0f2f5'
       }}>
         {!hideNavbar && user && (
           <Header style={{
             padding: "0 16px",
-            background: isDarkMode ? '#202021' : '#fff',
-            boxShadow: isDarkMode
-              ? "0 1px 0 0 #313130"
-              : "0 1px 0 0 #e8e8e8, 0 1px 6px rgba(0,0,0,0.05)",
+            background: isDarkMode ? '#202021' : '#ffffff',
+            borderBottom: isDarkMode ? '1px solid #2a2a2b' : '1px solid #e0e0e0',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
             display: "flex",
-            alignItems: "center",
-            position: "sticky",
-            top: 0,
-            zIndex: 1,
-            transition: "box-shadow 0.3s ease",
-            width: "100%"
+            alignItems: "center"
           }}>
             <Button
               type="text"
@@ -271,30 +222,27 @@ const AppContent = () => {
               onClick={() => setCollapsed(!collapsed)}
               style={{
                 fontSize: '16px',
-                width: 64,
-                height: 64,
                 color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)'
               }}
             />
 
-            <Space style={{ marginLeft: "16px" }}>
-              <HomeOutlined />
-              <span style={{
-                color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
-                fontWeight: 500
-              }}>
-                {location.pathname === "/"
-                  ? "Files"
-                  : location.pathname.slice(1).charAt(0).toUpperCase() + location.pathname.slice(2)}
-              </span>
-            </Space>
+            <span style={{
+              marginLeft: "16px",
+              color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
+              fontWeight: 500
+            }}>
+              <HomeOutlined style={{ marginRight: "8px" }} />
+              {location.pathname === "/"
+                ? "Files"
+                : location.pathname.slice(1).charAt(0).toUpperCase() + location.pathname.slice(2)}
+            </span>
           </Header>
         )}
 
         <Content style={{
-          padding: 14,
+          padding: 16,
           minHeight: 280,
-          backgroundColor: isDarkMode ? '#202021' : '#fff'
+          backgroundColor: isDarkMode ? '#202021' : '#ffffff'
         }}>
           <Routes>
             <Route path="/" element={<FileManager />} />

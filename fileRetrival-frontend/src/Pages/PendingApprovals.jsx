@@ -37,8 +37,9 @@ const PendingApprovals = () => {
   const { user } = useContext(AuthContext);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Check if user has approval permissions
-  const canApprove = user?.role === "ADMIN"; // Only admins can approve
+  // Check if user has approval permissions - MODIFIED HERE
+  // Allow both ADMINs and EDITORs who created the directory to approve
+  const canApprove = user?.role === "ADMIN"; // Default permissions
   const hasAccess = user?.role === "ADMIN" || user?.role === "EDITOR"; // Both admins and editors have access
 
   // Memoize fetch functions to prevent unnecessary re-renders
@@ -108,8 +109,16 @@ const PendingApprovals = () => {
 
   // Handle approval action
   const handleApprove = async (fileId, fileName) => {
-    if (!canApprove) {
-      message.error("You don't have permission to approve files.");
+    // MODIFIED: Check if user can approve this specific file
+    const file = approvals.find(file => file.id === fileId);
+
+    if (!file) {
+      message.error("File not found.");
+      return;
+    }
+
+    if (!canApprove && !file.canApprove) {
+      message.error("You don't have permission to approve this file.");
       return;
     }
 
@@ -134,8 +143,16 @@ const PendingApprovals = () => {
 
   // Handle rejection action
   const handleReject = async (fileId, fileName) => {
-    if (!canApprove) {
-      message.error("You don't have permission to reject files.");
+    // MODIFIED: Check if user can reject this specific file
+    const file = approvals.find(file => file.id === fileId);
+
+    if (!file) {
+      message.error("File not found.");
+      return;
+    }
+
+    if (!canApprove && !file.canApprove) {
+      message.error("You don't have permission to reject this file.");
       return;
     }
 
@@ -236,8 +253,11 @@ const PendingApprovals = () => {
 
   // Get the appropriate actions for a record based on user role
   const getActionButtons = (record) => {
-    // For ADMIN: Show all action buttons
-    if (canApprove) {
+    // MODIFIED: Check if this specific record can be approved by the current user
+    const userCanApproveThisFile = canApprove || record.canApprove;
+
+    // For users who can approve this specific file: Show all action buttons
+    if (userCanApproveThisFile) {
       return (
         <Space size="small">
           <Button
@@ -272,7 +292,7 @@ const PendingApprovals = () => {
       );
     }
 
-    // For EDITOR: Only show view details and compare
+    // For users who cannot approve: Only show view details and compare
     return (
       <Space size="small">
         <Button
@@ -483,15 +503,20 @@ const PendingApprovals = () => {
 
   // Handle approval from the compare modal
   const handleApproveFromModal = (fileId) => {
-    if (!canApprove) {
-      message.error("You don't have permission to approve files.");
+    const file = approvals.find(a => a.id === fileId);
+
+    if (!file) {
+      message.error("File not found.");
       return;
     }
 
-    const file = approvals.find(a => a.id === fileId);
-    if (file) {
-      handleApprove(fileId, file.name);
+    // MODIFIED: Check if user can approve this specific file
+    if (!canApprove && !file.canApprove) {
+      message.error("You don't have permission to approve this file.");
+      return;
     }
+
+    handleApprove(fileId, file.name);
     setCompareModalVisible(false);
   };
 
@@ -499,8 +524,11 @@ const PendingApprovals = () => {
   const getModalFooter = () => {
     if (!selectedFile) return null;
 
-    // For ADMIN and PENDING status: Show Approve/Reject buttons
-    if (canApprove && selectedFile.approvalStatus === "PENDING") {
+    // MODIFIED: Check if user can approve this specific file
+    const userCanApproveThisFile = canApprove || selectedFile.canApprove;
+
+    // For users who can approve and PENDING status: Show Approve/Reject buttons
+    if (userCanApproveThisFile && selectedFile.approvalStatus === "PENDING") {
       return [
         <Button key="close" onClick={() => setDetailsModalVisible(false)}>
           Cancel
@@ -553,7 +581,8 @@ const PendingApprovals = () => {
             <Col>
               <Title level={4} style={{ margin: 0 }}>
                 Pending File Approvals
-                {!canApprove && <Text type="secondary" style={{ fontSize: '14px', marginLeft: '10px' }}>(View only)</Text>}
+                {(!canApprove && !approvals.some(a => a.canApprove)) &&
+                  <Text type="secondary" style={{ fontSize: '14px', marginLeft: '10px' }}>(View only)</Text>}
               </Title>
             </Col>
             <Col>
@@ -663,7 +692,7 @@ const PendingApprovals = () => {
         open={detailsModalVisible}
         onCancel={() => setDetailsModalVisible(false)}
         footer={getModalFooter()}
-        width={700}
+        width={1000}
       >
         {selectedFile && (
           <div style={{ maxHeight: '65vh', overflowY: 'auto', paddingRight: '10px' }}>
@@ -721,6 +750,14 @@ const PendingApprovals = () => {
               <Descriptions.Item label="Version Count">
                 {selectedFile.versions?.length || 0}
               </Descriptions.Item>
+
+              {/* ADDED: Show approval permissions information */}
+              <Descriptions.Item label="Approval Permission">
+                {selectedFile.canApprove ?
+                  <Tag color="green">You can approve this file</Tag> :
+                  <Tag color="orange">View only</Tag>
+                }
+              </Descriptions.Item>
             </Descriptions>
 
             {selectedFile.versions?.length > 0 && (
@@ -777,7 +814,11 @@ const PendingApprovals = () => {
         onClose={() => setCompareModalVisible(false)}
         compareData={compareData}
         user={user}
-        onApprove={canApprove ? handleApproveFromModal : null}
+        onApprove={handleApproveFromModal}
+        canApprove={(fileId) => {
+          const file = approvals.find(a => a.id === fileId);
+          return file && (canApprove || file.canApprove);
+        }}
       />
     </Card>
   );

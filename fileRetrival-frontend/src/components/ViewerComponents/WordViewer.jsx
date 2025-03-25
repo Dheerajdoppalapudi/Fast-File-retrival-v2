@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { Spin, Result, Typography } from 'antd';
 import mammoth from 'mammoth';
+import { ThemeContext } from '../../context/ThemeContext'; 
 
 const { Text } = Typography;
 
@@ -8,6 +9,7 @@ const WordViewer = ({ fileContent, fileName }) => {
   const [htmlContent, setHtmlContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { theme } = useContext(ThemeContext);
 
   useEffect(() => {
     const convertWordToHtml = async () => {
@@ -39,14 +41,17 @@ const WordViewer = ({ fileContent, fileName }) => {
     convertWordToHtml();
   }, [fileContent]);
 
-  // Apply Word document styles
+  // Apply Word document styles based on current theme
+  const isDarkMode = theme === 'dark';
+  
   const documentStyles = `
     .word-viewer-content {
       font-family: 'Calibri', 'Arial', sans-serif;
       line-height: 1.5;
       padding: 20px;
-      background-color: white;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      background-color: ${isDarkMode ? '#202021' : 'white'};
+      color: ${isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)'};
+      box-shadow: 0 2px 8px rgba(0, 0, 0, ${isDarkMode ? '0.3' : '0.1'});
       border-radius: 4px;
     }
     .word-viewer-content h1, .word-viewer-content h2, .word-viewer-content h3, 
@@ -54,6 +59,7 @@ const WordViewer = ({ fileContent, fileName }) => {
       margin-top: 16px;
       margin-bottom: 8px;
       font-weight: 500;
+      color: ${isDarkMode ? 'rgba(255, 255, 255, 0.9)' : 'inherit'};
     }
     .word-viewer-content p {
       margin-bottom: 8px;
@@ -64,7 +70,7 @@ const WordViewer = ({ fileContent, fileName }) => {
       margin-bottom: 16px;
     }
     .word-viewer-content table, .word-viewer-content th, .word-viewer-content td {
-      border: 1px solid #d9d9d9;
+      border: 1px solid ${isDarkMode ? '#424242' : '#d9d9d9'};
     }
     .word-viewer-content th, .word-viewer-content td {
       padding: 8px;
@@ -76,6 +82,9 @@ const WordViewer = ({ fileContent, fileName }) => {
     }
     .word-viewer-content img {
       max-width: 100%;
+    }
+    .word-viewer-content a {
+      color: ${isDarkMode ? '#1890ff' : '#1890ff'};
     }
   `;
 
@@ -107,7 +116,7 @@ const WordViewer = ({ fileContent, fileName }) => {
           style={{ 
             maxHeight: '65vh', 
             overflowY: 'auto',
-            border: '1px solid #e8e8e8'
+            border: `1px solid ${isDarkMode ? '#424242' : '#e8e8e8'}`
           }}
         />
       )}
