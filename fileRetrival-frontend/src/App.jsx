@@ -1,6 +1,6 @@
 import React, { useEffect, useContext, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
-import { Layout, Menu, Typography, Avatar, Divider, Switch, Button, Tooltip } from "antd";
+import { Layout, Menu, Typography, Avatar, Divider, Switch, Button, Tooltip, Space, Popover } from "antd";
 import {
   FileOutlined,
   DiffOutlined,
@@ -26,11 +26,98 @@ import FileManager from "./Pages/FileManager";
 const { Content, Sider, Header } = Layout;
 const { Text } = Typography;
 
+// New UserProfile Component
+const UserProfile = ({ user, isDarkMode, handleLogout }) => {
+  const [visible, setVisible] = useState(false);
+  
+  const content = (
+    <div style={{ 
+      padding: '8px 4px',
+      width: '160px',
+    }}>
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        gap: '8px',
+        marginBottom: '12px'
+      }}>
+        <Avatar
+          size={48}
+          style={{ backgroundColor: "#1890ff" }}
+        >
+          {user?.username?.charAt(0).toUpperCase() || <UserOutlined />}
+        </Avatar>
+        <Text strong style={{ 
+          color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
+        }}>
+          {user?.username}
+        </Text>
+        <Text type="secondary" style={{ 
+          color: isDarkMode ? 'rgba(255, 255, 255, 0.45)' : 'rgba(0, 0, 0, 0.45)',
+          fontSize: '12px',
+          marginTop: '-4px'
+        }}>
+          {user?.role || 'User'}
+        </Text>
+      </div>
+      
+      <Button
+        type="primary"
+        icon={<LogoutOutlined />}
+        onClick={handleLogout}
+        size="middle"
+        style={{
+          width: '100%',
+          backgroundColor: isDarkMode ? '#1f1f1f' : '#f0f0f0',
+          color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
+          border: 'none',
+          borderRadius: '4px',
+          boxShadow: 'none',
+        }}
+      >
+        Logout
+      </Button>
+    </div>
+  );
+
+  return (
+    <Popover
+      content={content}
+      trigger="hover"
+      placement="bottomRight"
+      open={visible}
+      onOpenChange={setVisible}
+      overlayStyle={{ 
+        width: '180px',
+        padding: 0,
+      }}
+      overlayInnerStyle={{
+        backgroundColor: isDarkMode ? '#262626' : '#ffffff',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+        borderRadius: '8px',
+      }}
+    >
+      <Avatar
+        size={36}
+        style={{ 
+          backgroundColor: "#1890ff",
+          cursor: 'pointer',
+          transition: 'transform 0.2s ease',
+          transform: visible ? 'scale(1.05)' : 'scale(1)',
+        }}
+      >
+        {user?.username?.charAt(0).toUpperCase() || <UserOutlined />}
+      </Avatar>
+    </Popover>
+  );
+};
+
 const AppSidebar = ({ collapsed, setCollapsed }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout, user } = useContext(AuthContext);
-  const { theme, toggleTheme } = useContext(ThemeContext);
+  const { logout } = useContext(AuthContext);
+  const { theme } = useContext(ThemeContext);
   const isDarkMode = theme === 'dark';
 
   const selectedKey = location.pathname === "/" ? "files" : location.pathname.slice(1);
@@ -75,34 +162,6 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
         </Typography.Title>
       </div>
 
-      {/* User Profile */}
-      <div className="sidebar-user" style={{ 
-        padding: "16px 0",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        borderBottom: isDarkMode ? '1px solid #3f3f3f' : '1px solid #d0d0d0'
-      }}>
-        <Avatar
-          size={collapsed ? 36 : 56}
-          style={{ backgroundColor: "#1890ff" }}
-        >
-          {user?.username?.charAt(0).toUpperCase() || <UserOutlined />}
-        </Avatar>
-
-        {!collapsed && (
-          <div style={{ textAlign: "center", marginTop: "8px" }}>
-            <Text strong style={{ color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)' }}>
-              {user?.username}
-            </Text>
-            <br />
-            <Text style={{ color: isDarkMode ? 'rgba(255, 255, 255, 0.45)' : 'rgba(0, 0, 0, 0.45)', fontSize: "12px" }}>
-              {user?.role}
-            </Text>
-          </div>
-        )}
-      </div>
-
       {/* Navigation Menu */}
       <Menu
         theme={isDarkMode ? 'dark' : 'light'}
@@ -140,7 +199,7 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
         ]}
       />
 
-      {/* Bottom Controls */}
+      {/* Bottom Controls - Only Logout now */}
       <div className="sidebar-footer" style={{ 
         position: "absolute", 
         bottom: 0, 
@@ -153,13 +212,6 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
         alignItems: "center",
         gap: "8px"
       }}>
-        <Switch
-          checkedChildren={<BulbFilled />}
-          unCheckedChildren={<BulbOutlined />}
-          checked={isDarkMode}
-          onChange={toggleTheme}
-        />
-
         {collapsed ? (
           <Tooltip title="Logout" placement="right">
             <Button
@@ -190,11 +242,17 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
 
 const AppContent = () => {
   const location = useLocation();
-  const { user } = useContext(AuthContext);
-  const { theme } = useContext(ThemeContext);
+  const { user, logout } = useContext(AuthContext);
+  const { theme, toggleTheme } = useContext(ThemeContext);
   const isDarkMode = theme === 'dark';
   const hideNavbar = ["/login", "/register"].includes(location.pathname);
   const [collapsed, setCollapsed] = useState(false);
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -214,28 +272,49 @@ const AppContent = () => {
             borderBottom: isDarkMode ? '1px solid #2a2a2b' : '1px solid #e0e0e0',
             boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
             display: "flex",
-            alignItems: "center"
+            alignItems: "center",
+            justifyContent: "space-between"
           }}>
-            <Button
-              type="text"
-              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              onClick={() => setCollapsed(!collapsed)}
-              style={{
-                fontSize: '16px',
-                color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)'
-              }}
-            />
+            {/* Left side of header */}
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <Button
+                type="text"
+                icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                onClick={() => setCollapsed(!collapsed)}
+                style={{
+                  fontSize: '16px',
+                  color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)'
+                }}
+              />
 
-            <span style={{
-              marginLeft: "16px",
-              color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
-              fontWeight: 500
-            }}>
-              <HomeOutlined style={{ marginRight: "8px" }} />
-              {location.pathname === "/"
-                ? "Files"
-                : location.pathname.slice(1).charAt(0).toUpperCase() + location.pathname.slice(2)}
-            </span>
+              <span style={{
+                marginLeft: "16px",
+                color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
+                fontWeight: 500
+              }}>
+                <HomeOutlined style={{ marginRight: "8px" }} />
+                {location.pathname === "/"
+                  ? "Files"
+                  : location.pathname.slice(1).charAt(0).toUpperCase() + location.pathname.slice(2)}
+              </span>
+            </div>
+
+            {/* Right side of header - User Profile & Dark Mode Toggle */}
+            <Space size={16}>
+              <Switch
+                checkedChildren={<BulbFilled />}
+                unCheckedChildren={<BulbOutlined />}
+                checked={isDarkMode}
+                onChange={toggleTheme}
+              />
+              
+              {/* New UserProfile Component */}
+              <UserProfile 
+                user={user} 
+                isDarkMode={isDarkMode} 
+                handleLogout={handleLogout} 
+              />
+            </Space>
           </Header>
         )}
 
