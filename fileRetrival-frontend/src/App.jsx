@@ -144,21 +144,21 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
         backgroundColor: isDarkMode ? '#313130' : '#e8ecf0',
       }}
     >
-      {/* App Logo */}
+      {/* App Logo with Blue Background */}
       <div className="logo" style={{ 
         height: "64px",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        borderBottom: isDarkMode ? '1px solid #3f3f3f' : '1px solid #d0d0d0',
-        backgroundColor: isDarkMode ? '#2c2c2b' : '#e0e4ea'
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        backgroundColor: '#092e5d' // Blue background for the logo part
       }}>
         <Typography.Title level={4} style={{ 
           margin: 0, 
-          color: "#1890ff",
+          color: "#ffffff", // White text for better contrast against blue
           fontSize: collapsed ? '16px' : '20px'
         }}>
-          {collapsed ? "DS" : "DocSystem"}
+          {collapsed ? "CL" : "Company Logo"}
         </Typography.Title>
       </div>
 
@@ -212,7 +212,7 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
         alignItems: "center",
         gap: "8px"
       }}>
-        {collapsed ? (
+        {/* {collapsed ? (
           <Tooltip title="Logout" placement="right">
             <Button
               type="text"
@@ -234,7 +234,7 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
           >
             Logout
           </Button>
-        )}
+        )} */}
       </div>
     </Sider>
   );
@@ -254,6 +254,11 @@ const AppContent = () => {
     navigate("/login");
   };
 
+  // Format the current path
+  const currentPath = location.pathname === "/"
+    ? "Files"
+    : location.pathname.slice(1).charAt(0).toUpperCase() + location.pathname.slice(2);
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
       {!hideNavbar && user && (
@@ -268,12 +273,13 @@ const AppContent = () => {
         {!hideNavbar && user && (
           <Header style={{
             padding: "0 16px",
-            background: isDarkMode ? '#202021' : '#ffffff',
-            borderBottom: isDarkMode ? '1px solid #2a2a2b' : '1px solid #e0e0e0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            background: '#092e5d',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between"
+            justifyContent: "space-between",
+            color: '#ffffff'
           }}>
             {/* Left side of header */}
             <div style={{ display: "flex", alignItems: "center" }}>
@@ -283,19 +289,22 @@ const AppContent = () => {
                 onClick={() => setCollapsed(!collapsed)}
                 style={{
                   fontSize: '16px',
-                  color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)'
+                  color: 'rgba(255, 255, 255, 0.85)'
                 }}
               />
 
               <span style={{
                 marginLeft: "16px",
-                color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
-                fontWeight: 500
+                color: 'rgba(255, 255, 255, 0.85)',
+                fontWeight: 500,
+                display: "flex",
+                alignItems: "center"
               }}>
+                {/* <span style={{ fontWeight: 600 }}>Company Logo</span> */}
+                <span style={{ margin: "0 8px", fontWeight: 400, opacity: 0.8 }}>DocHub</span>
+                <span style={{ margin: "0 8px", opacity: 0.6 }}>|</span>
                 <HomeOutlined style={{ marginRight: "8px" }} />
-                {location.pathname === "/"
-                  ? "Files"
-                  : location.pathname.slice(1).charAt(0).toUpperCase() + location.pathname.slice(2)}
+                {currentPath}
               </span>
             </div>
 

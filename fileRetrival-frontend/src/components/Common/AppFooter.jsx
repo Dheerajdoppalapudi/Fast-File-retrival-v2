@@ -24,7 +24,7 @@ const AppFooter = () => {
           color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.45)'
         }}
       >
-        DocSystem POC ©{new Date().getFullYear()} Created by Tech Titans
+        DocHub POC ©{new Date().getFullYear()} Created by Bionics India
       </Text>
     </Footer>
   );
