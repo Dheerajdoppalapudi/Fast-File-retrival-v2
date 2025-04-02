@@ -24,7 +24,7 @@ import PendingApprovals from "./Pages/PendingApprovals";
 import FileManager from "./Pages/FileManager";
 
 const { Content, Sider, Header } = Layout;
-const { Text } = Typography;
+const { Text, Title } = Typography;
 
 // New UserProfile Component
 const UserProfile = ({ user, isDarkMode, handleLogout }) => {
@@ -144,14 +144,15 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
         backgroundColor: isDarkMode ? '#313130' : '#e8ecf0',
       }}
     >
-      {/* App Logo with Blue Background */}
+      {/* App Logo with Blue Background and White Border */}
       <div className="logo" style={{ 
         height: "64px",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-        backgroundColor: '#092e5d' // Blue background for the logo part
+        backgroundColor: '#092e5d', // Blue background for the logo part
+        borderRight: '0.5px solid #ffffff' // White border beside the logo
       }}>
         <Typography.Title level={4} style={{ 
           margin: 0, 
@@ -161,6 +162,8 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
           {collapsed ? "CL" : "Company Logo"}
         </Typography.Title>
       </div>
+
+      {/* Removed Collapse Button from top of sidebar */}
 
       {/* Navigation Menu */}
       <Menu
@@ -199,42 +202,38 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
         ]}
       />
 
-      {/* Bottom Controls - Only Logout now */}
+      {/* Bottom Controls with Toggle Menu Button */}
       <div className="sidebar-footer" style={{ 
         position: "absolute", 
         bottom: 0, 
         width: "100%",
-        padding: "16px 0",
+        padding: "16px",
         borderTop: isDarkMode ? '1px solid #3f3f3f' : '1px solid #d0d0d0',
         backgroundColor: isDarkMode ? '#313130' : '#e8ecf0',
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: "8px"
+        gap: "12px"
       }}>
-        {/* {collapsed ? (
-          <Tooltip title="Logout" placement="right">
-            <Button
-              type="text"
-              icon={<LogoutOutlined />}
-              onClick={handleLogout}
-              style={{
-                color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)',
-              }}
-            />
-          </Tooltip>
-        ) : (
-          <Button
-            type="text"
-            icon={<LogoutOutlined />}
-            onClick={handleLogout}
-            style={{
-              color: isDarkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)',
-            }}
-          >
-            Logout
-          </Button>
-        )} */}
+        {/* Toggle Menu Button at bottom of sidebar */}
+        <Button
+          type="text"
+          icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+          onClick={() => setCollapsed(!collapsed)}
+          style={{
+            width: '100%',
+            textAlign: 'center',
+            color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
+            backgroundColor: isDarkMode ? '#252525' : '#e0e0e0',
+            borderRadius: '4px',
+            height: '36px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          {!collapsed && <span style={{ marginLeft: '8px' }}>Toggle Menu</span>}
+        </Button>
       </div>
     </Sider>
   );
@@ -279,33 +278,37 @@ const AppContent = () => {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            color: '#ffffff'
+            color: '#ffffff',
+            position: "sticky",
+            top: 0,
+            zIndex: 1,
+            width: "100%"
           }}>
             {/* Left side of header */}
             <div style={{ display: "flex", alignItems: "center" }}>
-              <Button
-                type="text"
-                icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-                onClick={() => setCollapsed(!collapsed)}
-                style={{
-                  fontSize: '16px',
-                  color: 'rgba(255, 255, 255, 0.85)'
-                }}
-              />
-
-              <span style={{
-                marginLeft: "16px",
+              {/* Removed the toggle button from here since it's now in the sidebar */}
+              
+              <div style={{
+                marginLeft: "8px",
                 color: 'rgba(255, 255, 255, 0.85)',
                 fontWeight: 500,
                 display: "flex",
                 alignItems: "center"
               }}>
-                {/* <span style={{ fontWeight: 600 }}>Company Logo</span> */}
-                <span style={{ margin: "0 8px", fontWeight: 400, opacity: 0.8 }}>DocHub</span>
-                <span style={{ margin: "0 8px", opacity: 0.6 }}>|</span>
+                {/* DocHub Name with simpler styling */}
+                <span style={{ 
+                  margin: 0, 
+                  color: "#ffffff",
+                  fontWeight: 300,
+                  fontSize: "18px"
+                }}>
+                  DocHub
+                </span>
+                
+                <span style={{ margin: "0 12px", opacity: 0.6 }}>|</span>
                 <HomeOutlined style={{ marginRight: "8px" }} />
                 {currentPath}
-              </span>
+              </div>
             </div>
 
             {/* Right side of header - User Profile & Dark Mode Toggle */}
