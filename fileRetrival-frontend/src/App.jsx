@@ -152,15 +152,19 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
         justifyContent: "center",
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
         backgroundColor: '#092e5d', // Blue background for the logo part
-        borderRight: '0.5px solid #ffffff' // White border beside the logo
+        borderRight: '2px solid #ffffff', // White border beside the logo
+        padding: collapsed ? "10px" : "8px"
       }}>
-        <Typography.Title level={4} style={{ 
-          margin: 0, 
-          color: "#ffffff", // White text for better contrast against blue
-          fontSize: collapsed ? '16px' : '20px'
-        }}>
-          {collapsed ? "CL" : "Company Logo"}
-        </Typography.Title>
+        <img 
+          src="src/media/company_logo.png" 
+          alt="Company Logo" 
+          style={{
+            height: collapsed ? "40px" : "48px",
+            width: "auto",
+            maxWidth: "100%",
+            objectFit: "contain"
+          }}
+        />
       </div>
 
       {/* Removed Collapse Button from top of sidebar */}
@@ -299,7 +303,7 @@ const AppContent = () => {
                 <span style={{ 
                   margin: 0, 
                   color: "#ffffff",
-                  fontWeight: 300,
+                  fontWeight: 600,
                   fontSize: "18px"
                 }}>
                   DocHub
