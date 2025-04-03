@@ -116,7 +116,7 @@ const UserProfile = ({ user, isDarkMode, handleLogout }) => {
 const AppSidebar = ({ collapsed, setCollapsed }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout } = useContext(AuthContext);
+  const { logout, user } = useContext(AuthContext);
   const { theme } = useContext(ThemeContext);
   const isDarkMode = theme === 'dark';
 
@@ -126,6 +126,42 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
     logout();
     navigate("/login");
   };
+
+  // Create menu items array
+  const menuItems = [
+    {
+      key: "files",
+      icon: <FileOutlined />,
+      label: "Files",
+      onClick: () => navigate("/")
+    }
+  ];
+  
+  // Only add Compare option if user role is VIEWER
+  if (user?.role !== "VIEWER") {
+    menuItems.push({
+      key: "compare",
+      icon: <DiffOutlined />,
+      label: "Compare",
+      onClick: () => navigate("/compare")
+    });
+  }
+  
+  // Add remaining menu items
+  menuItems.push(
+    {
+      key: "approvals",
+      icon: <AuditOutlined />,
+      label: "Approvals",
+      onClick: () => navigate("/approvals")
+    },
+    {
+      key: "dashboard",
+      icon: <AppstoreOutlined />,
+      label: "Dashboard",
+      onClick: () => navigate("/dashboard")
+    }
+  );
 
   return (
     <Sider
@@ -167,8 +203,6 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
         />
       </div>
 
-      {/* Removed Collapse Button from top of sidebar */}
-
       {/* Navigation Menu */}
       <Menu
         theme={isDarkMode ? 'dark' : 'light'}
@@ -178,32 +212,7 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
           borderRight: 0,
           backgroundColor: isDarkMode ? '#313130' : '#e8ecf0'
         }}
-        items={[
-          {
-            key: "files",
-            icon: <FileOutlined />,
-            label: "Files",
-            onClick: () => navigate("/")
-          },
-          {
-            key: "compare",
-            icon: <DiffOutlined />,
-            label: "Compare",
-            onClick: () => navigate("/compare")
-          },
-          {
-            key: "approvals",
-            icon: <AuditOutlined />,
-            label: "Approvals",
-            onClick: () => navigate("/approvals")
-          },
-          {
-            key: "dashboard",
-            icon: <AppstoreOutlined />,
-            label: "Dashboard",
-            onClick: () => navigate("/dashboard")
-          }
-        ]}
+        items={menuItems}
       />
 
       {/* Bottom Controls with Toggle Menu Button */}
