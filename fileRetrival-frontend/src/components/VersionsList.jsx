@@ -4,6 +4,7 @@ import { ArrowRightOutlined } from "@ant-design/icons";
 import CompareModal from "./CompareModal";
 import { AuthContext } from "../context/AuthContext";
 import { ThemeContext } from "../context/ThemeContext";
+import axios from "axios";
 
 const { Text } = Typography;
 
@@ -16,21 +17,87 @@ const VersionsList = ({ versions, onVersionClick, contentData, openFileContent, 
   // Use provided isDarkMode prop or get it from context
   const darkMode = isDarkMode !== undefined ? isDarkMode : theme === 'dark';
 
-  const handleCompare = (record) => {
-    if (record.versions && record.versions.length > 0) {
-      const latestVersion = record.versions[0];
+  const handleCompare = async (clickedVersion) => {
+    try {
+      // Get current file data from contentData
+      const currentPath = contentData?.path;
+      const fileName = getFileName(clickedVersion);
+      const fileId = contentData?.id || clickedVersion.fileId;
       
-      setCompareData({
-        fileName: record.name,
-        currentPath: record.path,
-        latestVersionPath: latestVersion.path,
-        versionNumber: latestVersion.versionNumber,
-        allVersions: record.versions
-      });
+      if (!currentPath) {
+        message.error("Current file path not found");
+        return;
+      }
+
+      // Get all versions for the file
+      let allVersions = versions;
       
+      // If versions aren't provided fully, you might need to fetch them
+      if (!allVersions || allVersions.length === 0) {
+        // You could fetch versions here if needed
+        message.info("No versions available to compare");
+        return;
+      }
+
+      // Map all versions to the expected format for the modal
+      const formattedVersions = allVersions.map(v => ({
+        id: v.id,
+        path: v.path || v.filePath,
+        versionNumber: v.version || v.versionNumber,
+        createdAt: v.createdAt,
+        approverName: v.approvedBy,
+        approvedAt: v.approvedAt
+      }));
+
+      // Find the clicked version in the formatted versions
+      const selectedVersion = formattedVersions.find(v => v.id === clickedVersion.id);
+      if (!selectedVersion) {
+        message.error("Selected version not found");
+        return;
+      }
+
+      // Prepare data for the CompareModal
+      const compareModalData = {
+        fileName: fileName,
+        fileId: fileId,
+        currentPath: currentPath,
+        latestVersionPath: selectedVersion.path, // Use the selected version path as the latest
+        versionNumber: selectedVersion.versionNumber,
+        selectedVersion: selectedVersion, // Pass the selected version
+        allVersions: formattedVersions,
+        approvalStatus: contentData?.approvalStatus || "PENDING"
+      };
+      
+      setCompareData(compareModalData);
       setCompareModalVisible(true);
-    } else {
-      message.info("No versions available to compare");
+    } catch (error) {
+      console.error("Error preparing compare data:", error);
+      message.error("Failed to prepare comparison");
+    }
+  };
+
+  // Handle file approval if user has admin rights
+  const handleApproveFile = async (fileId) => {
+    try {
+      if (!fileId) {
+        message.error("File ID not found");
+        return;
+      }
+
+      await axios.post(
+        `http://localhost:8000/files/approve/${fileId}`,
+        {},
+        { headers: { Authorization: `Bearer ${user?.token}` } }
+      );
+
+      message.success("File approved successfully");
+      setCompareModalVisible(false);
+      
+      // Refresh data if needed
+      // You might want to call a refresh function here provided by the parent component
+    } catch (error) {
+      console.error("Error approving file:", error);
+      message.error("Failed to approve file");
     }
   };
 
@@ -178,12 +245,14 @@ const VersionsList = ({ versions, onVersionClick, contentData, openFileContent, 
           </Space>
         </div>
       ))}
+      
+      {/* Updated CompareModal with onApprove prop */}
       <CompareModal
         visible={compareModalVisible}
         onClose={() => setCompareModalVisible(false)}
         compareData={compareData}
         user={user}
-        isDarkMode={darkMode}
+        onApprove={handleApproveFile}
       />
     </div>
   );

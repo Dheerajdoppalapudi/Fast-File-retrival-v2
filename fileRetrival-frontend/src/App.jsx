@@ -29,16 +29,16 @@ const { Text, Title } = Typography;
 // New UserProfile Component
 const UserProfile = ({ user, isDarkMode, handleLogout }) => {
   const [visible, setVisible] = useState(false);
-  
+
   const content = (
-    <div style={{ 
+    <div style={{
       padding: '8px 4px',
       width: '160px',
     }}>
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        alignItems: 'center', 
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
         gap: '8px',
         marginBottom: '12px'
       }}>
@@ -48,12 +48,12 @@ const UserProfile = ({ user, isDarkMode, handleLogout }) => {
         >
           {user?.username?.charAt(0).toUpperCase() || <UserOutlined />}
         </Avatar>
-        <Text strong style={{ 
+        <Text strong style={{
           color: isDarkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
         }}>
           {user?.username}
         </Text>
-        <Text type="secondary" style={{ 
+        <Text type="secondary" style={{
           color: isDarkMode ? 'rgba(255, 255, 255, 0.45)' : 'rgba(0, 0, 0, 0.45)',
           fontSize: '12px',
           marginTop: '-4px'
@@ -61,7 +61,7 @@ const UserProfile = ({ user, isDarkMode, handleLogout }) => {
           {user?.role || 'User'}
         </Text>
       </div>
-      
+
       <Button
         type="primary"
         icon={<LogoutOutlined />}
@@ -88,7 +88,7 @@ const UserProfile = ({ user, isDarkMode, handleLogout }) => {
       placement="bottomRight"
       open={visible}
       onOpenChange={setVisible}
-      overlayStyle={{ 
+      overlayStyle={{
         width: '180px',
         padding: 0,
       }}
@@ -100,7 +100,7 @@ const UserProfile = ({ user, isDarkMode, handleLogout }) => {
     >
       <Avatar
         size={36}
-        style={{ 
+        style={{
           backgroundColor: "#1890ff",
           cursor: 'pointer',
           transition: 'transform 0.2s ease',
@@ -136,25 +136,20 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
       onClick: () => navigate("/")
     }
   ];
-  
+
   // Only add Compare option if user role is VIEWER
   if (user?.role !== "VIEWER") {
     menuItems.push({
-      key: "compare",
-      icon: <DiffOutlined />,
-      label: "Compare",
-      onClick: () => navigate("/compare")
-    });
-  }
-  
-  // Add remaining menu items
-  menuItems.push(
-    {
       key: "approvals",
       icon: <AuditOutlined />,
       label: "Approvals",
       onClick: () => navigate("/approvals")
-    },
+    });
+  }
+
+  // Add remaining menu items
+  menuItems.push(
+
     {
       key: "dashboard",
       icon: <AppstoreOutlined />,
@@ -181,22 +176,24 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
       }}
     >
       {/* App Logo with Blue Background and White Border */}
-      <div className="logo" style={{ 
+      <div className="logo" style={{
         height: "64px",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-        backgroundColor: '#092e5d', // Blue background for the logo part
-        borderRight: '2px solid #ffffff', // White border beside the logo
+        backgroundColor: '#092e5d',
+        borderRight: '0.5px solid #ffffff',
         padding: collapsed ? "10px" : "8px"
       }}>
-        <img 
-          src="src/media/company_logo.png" 
-          alt="Company Logo" 
+        <img
+          src="src/media/company_logo.png"
+          alt="Company Logo"
           style={{
             height: collapsed ? "40px" : "48px",
             width: "auto",
+            height: "80%",
+            height: "80%",
             maxWidth: "100%",
             objectFit: "contain"
           }}
@@ -208,7 +205,7 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
         theme={isDarkMode ? 'dark' : 'light'}
         mode="inline"
         selectedKeys={[selectedKey]}
-        style={{ 
+        style={{
           borderRight: 0,
           backgroundColor: isDarkMode ? '#313130' : '#e8ecf0'
         }}
@@ -216,9 +213,9 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
       />
 
       {/* Bottom Controls with Toggle Menu Button */}
-      <div className="sidebar-footer" style={{ 
-        position: "absolute", 
-        bottom: 0, 
+      <div className="sidebar-footer" style={{
+        position: "absolute",
+        bottom: 0,
         width: "100%",
         padding: "16px",
         borderTop: isDarkMode ? '1px solid #3f3f3f' : '1px solid #d0d0d0',
@@ -300,7 +297,7 @@ const AppContent = () => {
             {/* Left side of header */}
             <div style={{ display: "flex", alignItems: "center" }}>
               {/* Removed the toggle button from here since it's now in the sidebar */}
-              
+
               <div style={{
                 marginLeft: "8px",
                 color: 'rgba(255, 255, 255, 0.85)',
@@ -309,18 +306,18 @@ const AppContent = () => {
                 alignItems: "center"
               }}>
                 {/* DocHub Name with simpler styling */}
-                <span style={{ 
-                  margin: 0, 
+                <span style={{
+                  margin: 0,
                   color: "#ffffff",
-                  fontWeight: 600,
+                  fontWeight: 400,
                   fontSize: "18px"
                 }}>
                   DocHub
                 </span>
-                
-                <span style={{ margin: "0 12px", opacity: 0.6 }}>|</span>
-                <HomeOutlined style={{ marginRight: "8px" }} />
-                {currentPath}
+
+                {/* <span style={{ margin: "0 12px", opacity: 0.6 }}>|</span> */}
+                {/* <HomeOutlined style={{ marginRight: "8px" }} /> */}
+                {/* {currentPath} */}
               </div>
             </div>
 
@@ -332,12 +329,12 @@ const AppContent = () => {
                 checked={isDarkMode}
                 onChange={toggleTheme}
               />
-              
+
               {/* New UserProfile Component */}
-              <UserProfile 
-                user={user} 
-                isDarkMode={isDarkMode} 
-                handleLogout={handleLogout} 
+              <UserProfile
+                user={user}
+                isDarkMode={isDarkMode}
+                handleLogout={handleLogout}
               />
             </Space>
           </Header>

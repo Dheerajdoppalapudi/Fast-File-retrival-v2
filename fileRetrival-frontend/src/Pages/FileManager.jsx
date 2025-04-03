@@ -242,7 +242,7 @@ const FolderCreationModal = ({ visible, setVisible, folderName, setFolderName, h
   </Modal>
 );
 
-// New file upload modal component
+// New file upload modal component with fixes
 const FileUploadModal = ({ 
   visible, 
   setVisible, 
@@ -259,14 +259,23 @@ const FileUploadModal = ({
     setDescription("");
   };
 
+  // Reset form when modal closes or opens
+  useEffect(() => {
+    if (!visible) {
+      resetForm();
+    }
+  }, [visible]);
+
   const onCancel = () => {
-    resetForm();
     setVisible(false);
+    // Form will be reset by the useEffect when visible changes
   };
 
   const onSubmit = () => {
     if (selectedFile && description.trim()) {
       handleUpload(selectedFile, description);
+      // We don't reset here because the form will only be cleared
+      // once the modal is closed (which happens in handleUpload)
     }
   };
 

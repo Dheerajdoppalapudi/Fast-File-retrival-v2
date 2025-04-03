@@ -1,4 +1,4 @@
-// CompareModal.jsx - With Dark Theme Support
+// CompareModal.jsx - With Initial Selection Support
 import React, { useEffect, useState, useCallback, useMemo, useContext } from 'react';
 import { Modal, Button, Card, Row, Col, Divider, List, Typography, Spin, Tabs, Tag, Tooltip, Space, Empty } from 'antd';
 import {
@@ -50,19 +50,54 @@ const CompareModal = ({
     versionItemBorder: isDarkMode ? '1px solid #303030' : '1px solid #f0f0f0',
   };
 
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!visible) {
+      setSelectedVersion(null);
+      setSelectedVersionContent('');
+      setLatestVersionContent('');
+      setCurrentFileContent('');
+      setContentType('text');
+    }
+  }, [visible]);
+
   // Fetch file contents when modal becomes visible or compareData changes
   useEffect(() => {
     if (visible && compareData) {
+      // Set the initially selected version if provided
+      if (compareData.selectedVersion && !selectedVersion) {
+        setSelectedVersion(compareData.selectedVersion);
+      }
+      
       fetchFileContents(compareData.currentPath, compareData.latestVersionPath);
     }
+  }, [visible, compareData, selectedVersion]);
 
-    // Reset selected version when modal closes or compareData changes
-    return () => {
-      setSelectedVersion(null);
-      setSelectedVersionContent('');
-      setContentType('text');
-    };
-  }, [visible, compareData]);
+  // When selectedVersion changes, fetch its content
+  useEffect(() => {
+    if (selectedVersion && visible) {
+      fetchVersionContent(selectedVersion);
+    }
+  }, [selectedVersion, visible]);
+
+  // Fetch selected version content
+  const fetchVersionContent = useCallback(async (version) => {
+    if (!version || !version.path) return;
+    
+    setIsLoading(true);
+    try {
+      const response = await axios.get('http://localhost:8000/files/content', {
+        params: { path: version.path },
+        headers: { Authorization: `Bearer ${user?.token}` }
+      });
+
+      setSelectedVersionContent(response.data.content);
+    } catch (error) {
+      console.error('Error fetching version content:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
 
   // Fetch file contents with error handling
   const fetchFileContents = useCallback(async (currentPath, latestPath) => {
@@ -76,11 +111,14 @@ const CompareModal = ({
         headers: { Authorization: `Bearer ${user?.token}` }
       });
 
-      // Fetch latest version content
-      const latestResponse = await axios.get('http://localhost:8000/files/content', {
-        params: { path: latestPath },
-        headers: { Authorization: `Bearer ${user?.token}` }
-      });
+      // Fetch latest version content (if no selected version)
+      if (!selectedVersion) {
+        const latestResponse = await axios.get('http://localhost:8000/files/content', {
+          params: { path: latestPath },
+          headers: { Authorization: `Bearer ${user?.token}` }
+        });
+        setLatestVersionContent(latestResponse.data.content);
+      }
 
       // Determine content type from file extension or content
       const fileExtension = currentPath.split('.').pop().toLowerCase();
@@ -93,31 +131,57 @@ const CompareModal = ({
       }
 
       setCurrentFileContent(currentResponse.data.content);
-      setLatestVersionContent(latestResponse.data.content);
     } catch (error) {
       console.error('Error fetching file contents:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, selectedVersion]);
 
   // Handle version selection
   const handleViewVersion = useCallback(async (version) => {
     setSelectedVersion(version);
-    setIsLoading(true);
+  }, []);
 
-    try {
-      const response = await axios.get('http://localhost:8000/files/content', {
-        params: { path: version.path },
-        headers: { Authorization: `Bearer ${user?.token}` }
+  // File download handler
+  const handleDownloadFile = useCallback((filePath) => {
+    if (!filePath) return;
+    
+    // Get filename from path
+    const fileName = filePath.split('/').pop();
+    
+    // Use Axios for the download with proper authorization
+    axios({
+      url: `http://localhost:8000/files/content?path=${encodeURIComponent(filePath)}`,
+      method: 'GET',
+      responseType: 'blob', // Important for binary files
+      headers: { Authorization: `Bearer ${user?.token}` }
+    })
+    .then((response) => {
+      // Create a Blob URL for the downloaded file
+      const blob = new Blob([response.data]);
+      const url = window.URL.createObjectURL(blob);
+      
+      // Create a temporary anchor element
+      const tempLink = document.createElement('a');
+      tempLink.href = url;
+      tempLink.setAttribute('download', fileName);
+      document.body.appendChild(tempLink);
+      
+      // Trigger the download
+      tempLink.click();
+      
+      // Clean up
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(tempLink);
+    })
+    .catch((error) => {
+      console.error('Error downloading file:', error);
+      Modal.error({
+        title: 'Download Failed',
+        content: 'There was an error downloading the file. Please try again.'
       });
-
-      setSelectedVersionContent(response.data.content);
-    } catch (error) {
-      console.error('Error fetching version content:', error);
-    } finally {
-      setIsLoading(false);
-    }
+    });
   }, [user]);
 
   // Generate line-by-line diff between two content strings
@@ -135,18 +199,19 @@ const CompareModal = ({
     }
 
     try {
-      const differences = diffLines(oldContent || '', newContent || '');
+      // Compare version against current
+      const differences = diffLines(newContent || '', oldContent || '');
 
       return (
         <div style={{ fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.5', backgroundColor: themeStyles.codeBackground }}>
           {differences.map((part, index) => {
             const style = part.added
-              ? { backgroundColor: themeStyles.diffAddedBg, color: themeStyles.textColor }
+              ? { backgroundColor: themeStyles.diffRemovedBg, color: themeStyles.textColor, textDecoration: 'line-through' }
               : part.removed
-                ? { backgroundColor: themeStyles.diffRemovedBg, color: themeStyles.textColor, textDecoration: 'line-through' }
+                ? { backgroundColor: themeStyles.diffAddedBg, color: themeStyles.textColor }
                 : { color: themeStyles.textColor };
 
-            const prefix = part.added ? '+ ' : part.removed ? '- ' : '  ';
+            const prefix = part.added ? '- ' : part.removed ? '+ ' : '  ';
 
             return (
               <div key={index} style={style}>
@@ -181,7 +246,8 @@ const CompareModal = ({
     }
 
     try {
-      const differences = diffWords(oldContent || '', newContent || '');
+      // Compare version against current
+      const differences = diffWords(newContent || '', oldContent || '');
 
       return (
         <div style={{ 
@@ -194,9 +260,9 @@ const CompareModal = ({
         }}>
           {differences.map((part, index) => {
             const style = part.added
-              ? { backgroundColor: themeStyles.diffAddedBg, color: themeStyles.textColor }
+              ? { backgroundColor: themeStyles.diffRemovedBg, color: themeStyles.textColor }
               : part.removed
-                ? { backgroundColor: themeStyles.diffRemovedBg, color: themeStyles.textColor }
+                ? { backgroundColor: themeStyles.diffAddedBg, color: themeStyles.textColor }
                 : { color: themeStyles.textColor };
 
             return (
@@ -215,10 +281,10 @@ const CompareModal = ({
     }
   }, [contentType, themeStyles]);
 
-  // Render content based on content type
-  const renderContent = useCallback((content, title) => {
+  // Render content based on content type - Updated with download buttons
+  const renderContent = useCallback((content, title, filePath) => {
     if (contentType === 'image') {
-      // For images, render a data URL
+      // For images, render a data URL with download button
       return (
         <div style={{ textAlign: 'center' }}>
           <img
@@ -226,36 +292,60 @@ const CompareModal = ({
             alt={title}
             style={{ maxWidth: '100%', maxHeight: '500px' }}
           />
+          <div style={{ marginTop: '10px' }}>
+            <Button 
+              icon={<DownloadOutlined />} 
+              size="small"
+              onClick={() => handleDownloadFile(filePath)}
+            >
+              Download Image
+            </Button>
+          </div>
         </div>
       );
     } else if (contentType === 'binary') {
-      // For binary files, just show a placeholder
+      // For binary files, show a placeholder with download button
       return (
         <div style={{ textAlign: 'center', padding: '20px' }}>
           <FileOutlined style={{ fontSize: '40px', color: '#1890ff' }} />
           <Paragraph style={{ marginTop: '10px' }}>
             Binary file preview not available
           </Paragraph>
-          <Button icon={<DownloadOutlined />} size="small">
+          <Button 
+            icon={<DownloadOutlined />} 
+            size="small"
+            onClick={() => handleDownloadFile(filePath)}
+          >
             Download File
           </Button>
         </div>
       );
     } else {
-      // For text files, show the content
+      // For text files, show the content with download button
       return (
-        <pre style={{ 
-          whiteSpace: 'pre-wrap', 
-          wordBreak: 'break-word', 
-          fontSize: '12px', 
-          color: themeStyles.textColor,
-          backgroundColor: themeStyles.codeBackground
-        }}>
-          {content}
-        </pre>
+        <div>
+          <pre style={{ 
+            whiteSpace: 'pre-wrap', 
+            wordBreak: 'break-word', 
+            fontSize: '12px', 
+            color: themeStyles.textColor,
+            backgroundColor: themeStyles.codeBackground
+          }}>
+            {content}
+          </pre>
+          <div style={{ marginTop: '10px', textAlign: 'right' }}>
+            <Button 
+              icon={<DownloadOutlined />} 
+              size="small"
+              onClick={() => handleDownloadFile(filePath)}
+            >
+              Download Text
+            </Button>
+          </div>
+        </div>
       );
     }
-  }, [contentType, themeStyles]);
+  }, [contentType, themeStyles, handleDownloadFile]);
 
   // Improved version history rendering with dark theme support
   const renderVersionHistory = useMemo(() => {
@@ -361,6 +451,13 @@ const CompareModal = ({
     return buttons;
   }, [compareData, user, onClose, onApprove]);
 
+  // Get the content to display in the version panel
+  const versionContentToDisplay = selectedVersion ? selectedVersionContent : latestVersionContent;
+  const versionPathToDisplay = selectedVersion ? selectedVersion.path : compareData?.latestVersionPath;
+  const versionTitleToDisplay = selectedVersion 
+    ? `Version ${selectedVersion.versionNumber}` 
+    : compareData?.versionNumber ? `Latest Version (v${compareData.versionNumber})` : 'Latest Version';
+
   return (
     <Modal
       title={
@@ -442,38 +539,7 @@ const CompareModal = ({
                           title={
                             <Space size={4}>
                               <FileOutlined />
-                              Current File
-                            </Space>
-                          }
-                          size="small"
-                          style={{
-                            height: 'calc(95vh - 300px)',
-                            overflow: 'auto',
-                            backgroundColor: themeStyles.cardBackground
-                          }}
-                          headStyle={{ 
-                            padding: '0 8px',
-                            backgroundColor: themeStyles.headerBackground
-                          }}
-                          bodyStyle={{ 
-                            padding: '8px',
-                            backgroundColor: themeStyles.cardBackground
-                          }}
-                          bordered
-                        >
-                          {renderContent(currentFileContent, 'Current File')}
-                        </Card>
-                      </Col>
-                      <Col span={12}>
-                        <Card
-                          type="inner"
-                          title={
-                            <Space size={4}>
-                              <FileOutlined />
-                              {selectedVersion ?
-                                `v${selectedVersion.versionNumber}` :
-                                `Latest Version (v${compareData.versionNumber})`
-                              }
+                              {versionTitleToDisplay}
                               {(selectedVersion?.approverName || compareData.allVersions?.[0]?.approverName) && (
                                 <Tooltip title={`Approved by ${selectedVersion?.approverName || compareData.allVersions[0].approverName}`}>
                                   <Tag color="success" icon={<CheckOutlined />}>Approved</Tag>
@@ -498,9 +564,38 @@ const CompareModal = ({
                           bordered
                         >
                           {renderContent(
-                            selectedVersion ? selectedVersionContent : latestVersionContent,
-                            selectedVersion ? `Version ${selectedVersion.versionNumber}` : 'Latest Version'
+                            versionContentToDisplay,
+                            versionTitleToDisplay,
+                            versionPathToDisplay
                           )}
+                        </Card>
+                      </Col>
+                      <Col span={12}>
+                        <Card
+                          type="inner"
+                          title={
+                            <Space size={4}>
+                              <FileOutlined />
+                              Current File
+                            </Space>
+                          }
+                          size="small"
+                          style={{
+                            height: 'calc(95vh - 300px)',
+                            overflow: 'auto',
+                            backgroundColor: themeStyles.cardBackground
+                          }}
+                          headStyle={{ 
+                            padding: '0 8px',
+                            backgroundColor: themeStyles.headerBackground
+                          }}
+                          bodyStyle={{ 
+                            padding: '8px',
+                            backgroundColor: themeStyles.cardBackground
+                          }}
+                          bordered
+                        >
+                          {renderContent(currentFileContent, 'Current File', compareData?.currentPath)}
                         </Card>
                       </Col>
                     </Row>
@@ -508,7 +603,29 @@ const CompareModal = ({
                   <TabPane tab={<span><DiffOutlined /> Line Diff</span>} key="lineDiff">
                     <Card
                       type="inner"
-                      title={`Differences (Line by Line) - ${selectedVersion ? `Current vs v${selectedVersion.versionNumber}` : 'Current vs Latest'}`}
+                      title={
+                        <div>
+                          <span>Differences (Line by Line) - {selectedVersion ? `v${selectedVersion.versionNumber} vs Current` : 'Latest vs Current'}</span>
+                          <div style={{ float: 'right' }}>
+                            <Space>
+                              <Button 
+                                icon={<DownloadOutlined />} 
+                                size="small"
+                                onClick={() => handleDownloadFile(versionPathToDisplay)}
+                              >
+                                Download Version
+                              </Button>
+                              <Button 
+                                icon={<DownloadOutlined />} 
+                                size="small"
+                                onClick={() => handleDownloadFile(compareData?.currentPath)}
+                              >
+                                Download Current
+                              </Button>
+                            </Space>
+                          </div>
+                        </div>
+                      }
                       size="small"
                       style={{
                         height: 'calc(95vh - 300px)',
@@ -526,15 +643,37 @@ const CompareModal = ({
                       bordered
                     >
                       {renderDiff(
-                        currentFileContent,
-                        selectedVersion ? selectedVersionContent : latestVersionContent
+                        versionContentToDisplay,
+                        currentFileContent
                       )}
                     </Card>
                   </TabPane>
                   <TabPane tab={<span><DiffOutlined /> Inline Diff</span>} key="inlineDiff">
                     <Card
                       type="inner"
-                      title={`Differences (Inline) - ${selectedVersion ? `Current vs v${selectedVersion.versionNumber}` : 'Current vs Latest'}`}
+                      title={
+                        <div>
+                          <span>Differences (Inline) - {selectedVersion ? `v${selectedVersion.versionNumber} vs Current` : 'Latest vs Current'}</span>
+                          <div style={{ float: 'right' }}>
+                            <Space>
+                              <Button 
+                                icon={<DownloadOutlined />} 
+                                size="small"
+                                onClick={() => handleDownloadFile(versionPathToDisplay)}
+                              >
+                                Download Version
+                              </Button>
+                              <Button 
+                                icon={<DownloadOutlined />} 
+                                size="small"
+                                onClick={() => handleDownloadFile(compareData?.currentPath)}
+                              >
+                                Download Current
+                              </Button>
+                            </Space>
+                          </div>
+                        </div>
+                      }
                       size="small"
                       style={{
                         height: 'calc(95vh - 300px)',
@@ -552,8 +691,8 @@ const CompareModal = ({
                       bordered
                     >
                       {renderInlineDiff(
-                        currentFileContent,
-                        selectedVersion ? selectedVersionContent : latestVersionContent
+                        versionContentToDisplay,
+                        currentFileContent
                       )}
                     </Card>
                   </TabPane>
