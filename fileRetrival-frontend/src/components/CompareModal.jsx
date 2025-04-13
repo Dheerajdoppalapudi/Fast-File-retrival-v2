@@ -1,4 +1,4 @@
-// CompareModal.jsx - With Initial Selection Support
+// CompareModal.jsx - With Fixed Word Document Comparison Support
 import React, { useEffect, useState, useCallback, useMemo, useContext } from 'react';
 import { Modal, Button, Card, Row, Col, Divider, List, Typography, Spin, Tabs, Tag, Tooltip, Space, Empty } from 'antd';
 import {
@@ -10,11 +10,13 @@ import {
   InfoCircleOutlined,
   HistoryOutlined,
   DownloadOutlined,
-  CheckOutlined
+  CheckOutlined,
+  FileWordOutlined  // Added for Word documents
 } from '@ant-design/icons';
 import axios from 'axios';
 import { diffLines, diffWords } from 'diff';
 import { ThemeContext } from '../context/ThemeContext'; 
+import WordViewer from '../components/ViewerComponents/WordViewer'; // Import the WordViewer component
 
 const { Text, Paragraph } = Typography;
 const { TabPane } = Tabs;
@@ -31,7 +33,8 @@ const CompareModal = ({
   const [selectedVersionContent, setSelectedVersionContent] = useState('');
   const [selectedVersion, setSelectedVersion] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [contentType, setContentType] = useState('text'); // 'text', 'binary', 'image'
+  const [contentType, setContentType] = useState('text'); // 'text', 'binary', 'image', 'word'
+  const [fileExtension, setFileExtension] = useState(''); // Track file extension
   const { theme } = useContext(ThemeContext); // Get current theme
   
   // Compute theme-dependent styles
@@ -50,6 +53,17 @@ const CompareModal = ({
     versionItemBorder: isDarkMode ? '1px solid #303030' : '1px solid #f0f0f0',
   };
 
+  // Helper function to convert ArrayBuffer to Base64
+  const arrayBufferToBase64 = useCallback((buffer) => {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+  }, []);
+
   // Reset state when modal closes
   useEffect(() => {
     if (!visible) {
@@ -58,6 +72,7 @@ const CompareModal = ({
       setLatestVersionContent('');
       setCurrentFileContent('');
       setContentType('text');
+      setFileExtension('');
     }
   }, [visible]);
 
@@ -67,6 +82,12 @@ const CompareModal = ({
       // Set the initially selected version if provided
       if (compareData.selectedVersion && !selectedVersion) {
         setSelectedVersion(compareData.selectedVersion);
+      }
+      
+      // Extract file extension
+      if (compareData.currentPath) {
+        const ext = compareData.currentPath.split('.').pop().toLowerCase();
+        setFileExtension(ext);
       }
       
       fetchFileContents(compareData.currentPath, compareData.latestVersionPath);
@@ -80,63 +101,95 @@ const CompareModal = ({
     }
   }, [selectedVersion, visible]);
 
-  // Fetch selected version content
+  // Fetch selected version content with improved Word doc handling
   const fetchVersionContent = useCallback(async (version) => {
     if (!version || !version.path) return;
     
     setIsLoading(true);
     try {
+      // Get file extension
+      const docExtension = version.path.split('.').pop().toLowerCase();
+      const isWordDoc = ['doc', 'docx'].includes(docExtension);
+      
       const response = await axios.get('http://localhost:8000/files/content', {
         params: { path: version.path },
-        headers: { Authorization: `Bearer ${user?.token}` }
+        headers: { Authorization: `Bearer ${user?.token}` },
+        responseType: isWordDoc ? 'arraybuffer' : 'json'
       });
 
-      setSelectedVersionContent(response.data.content);
+      if (isWordDoc) {
+        const base64Content = arrayBufferToBase64(response.data);
+        setSelectedVersionContent(base64Content);
+      } else {
+        setSelectedVersionContent(response.data.content);
+      }
     } catch (error) {
       console.error('Error fetching version content:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, arrayBufferToBase64]);
 
-  // Fetch file contents with error handling
+  // Improved fetch file contents with proper handling for Word docs
   const fetchFileContents = useCallback(async (currentPath, latestPath) => {
     if (!currentPath || !latestPath) return;
 
     setIsLoading(true);
     try {
+      // Determine content type from file extension
+      const ext = currentPath.split('.').pop().toLowerCase();
+      setFileExtension(ext);
+      
+      // Set content type based on file extension
+      let currentContentType = 'text';
+      if (['doc', 'docx'].includes(ext)) {
+        currentContentType = 'word';
+      } else if (['jpg', 'jpeg', 'png', 'gif', 'svg'].includes(ext)) {
+        currentContentType = 'image';
+      } else if (['pdf', 'xls', 'xlsx', 'zip', 'exe'].includes(ext)) {
+        currentContentType = 'binary';
+      }
+      
+      setContentType(currentContentType);
+      
+      // Use appropriate response type based on content type
+      const isWordDoc = currentContentType === 'word';
+      
       // Fetch current file content
       const currentResponse = await axios.get('http://localhost:8000/files/content', {
         params: { path: currentPath },
-        headers: { Authorization: `Bearer ${user?.token}` }
+        headers: { Authorization: `Bearer ${user?.token}` },
+        responseType: isWordDoc ? 'arraybuffer' : 'json',
       });
+      
+      if (isWordDoc) {
+        const base64Content = arrayBufferToBase64(currentResponse.data);
+        setCurrentFileContent(base64Content);
+      } else {
+        setCurrentFileContent(currentResponse.data.content);
+      }
 
       // Fetch latest version content (if no selected version)
       if (!selectedVersion) {
         const latestResponse = await axios.get('http://localhost:8000/files/content', {
           params: { path: latestPath },
-          headers: { Authorization: `Bearer ${user?.token}` }
+          headers: { Authorization: `Bearer ${user?.token}` },
+          responseType: isWordDoc ? 'arraybuffer' : 'json',
         });
-        setLatestVersionContent(latestResponse.data.content);
+        
+        if (isWordDoc) {
+          const latestBase64Content = arrayBufferToBase64(latestResponse.data);
+          setLatestVersionContent(latestBase64Content);
+        } else {
+          setLatestVersionContent(latestResponse.data.content);
+        }
       }
-
-      // Determine content type from file extension or content
-      const fileExtension = currentPath.split('.').pop().toLowerCase();
-      if (['jpg', 'jpeg', 'png', 'gif', 'svg'].includes(fileExtension)) {
-        setContentType('image');
-      } else if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'zip', 'exe'].includes(fileExtension)) {
-        setContentType('binary');
-      } else {
-        setContentType('text');
-      }
-
-      setCurrentFileContent(currentResponse.data.content);
     } catch (error) {
       console.error('Error fetching file contents:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [user, selectedVersion]);
+  }, [user, selectedVersion, arrayBufferToBase64]);
 
   // Handle version selection
   const handleViewVersion = useCallback(async (version) => {
@@ -281,9 +334,53 @@ const CompareModal = ({
     }
   }, [contentType, themeStyles]);
 
-  // Render content based on content type - Updated with download buttons
+  // Enhanced render content function with improved Word doc handling
   const renderContent = useCallback((content, title, filePath) => {
-    if (contentType === 'image') {
+    if (contentType === 'word') {
+      // For Word documents, use the WordViewer component with error handling
+      return (
+        <div>
+          {content ? (
+            <>
+              <div style={{ 
+                padding: '10px', 
+                backgroundColor: themeStyles.cardBackground, 
+                border: `1px solid ${themeStyles.cardBorder}`,
+                borderRadius: '4px'
+              }}>
+                <WordViewer 
+                  fileContent={content} 
+                  fileName={filePath ? filePath.split('/').pop() : title} 
+                />
+              </div>
+              <div style={{ marginTop: '10px', textAlign: 'right' }}>
+                <Button 
+                  icon={<DownloadOutlined />} 
+                  size="small"
+                  onClick={() => handleDownloadFile(filePath)}
+                >
+                  Download Document
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '20px' }}>
+              <FileWordOutlined style={{ fontSize: '40px', color: '#1890ff' }} />
+              <Paragraph style={{ marginTop: '10px' }}>
+                Error loading Word document
+              </Paragraph>
+              <Button 
+                icon={<DownloadOutlined />} 
+                size="small"
+                onClick={() => handleDownloadFile(filePath)}
+              >
+                Download Document
+              </Button>
+            </div>
+          )}
+        </div>
+      );
+    } else if (contentType === 'image') {
       // For images, render a data URL with download button
       return (
         <div style={{ textAlign: 'center' }}>
@@ -458,11 +555,198 @@ const CompareModal = ({
     ? `Version ${selectedVersion.versionNumber}` 
     : compareData?.versionNumber ? `Latest Version (v${compareData.versionNumber})` : 'Latest Version';
 
+  // Determine tabs to show based on content type
+  const renderTabsBasedOnContentType = () => {
+    const sideBySideTab = (
+      <TabPane tab="Side by Side" key="sideBySide">
+        <Row gutter={[12, 0]}>
+          <Col span={12}>
+            <Card
+              type="inner"
+              title={
+                <Space size={4}>
+                  {contentType === 'word' ? <FileWordOutlined /> : <FileOutlined />}
+                  {versionTitleToDisplay}
+                  {(selectedVersion?.approverName || compareData.allVersions?.[0]?.approverName) && (
+                    <Tooltip title={`Approved by ${selectedVersion?.approverName || compareData.allVersions[0].approverName}`}>
+                      <Tag color="success" icon={<CheckOutlined />}>Approved</Tag>
+                    </Tooltip>
+                  )}
+                </Space>
+              }
+              size="small"
+              style={{
+                height: 'calc(95vh - 300px)',
+                overflow: 'auto',
+                backgroundColor: themeStyles.cardBackground
+              }}
+              headStyle={{ 
+                padding: '0 8px',
+                backgroundColor: themeStyles.headerBackground
+              }}
+              bodyStyle={{ 
+                padding: '8px',
+                backgroundColor: themeStyles.cardBackground
+              }}
+              bordered
+            >
+              {renderContent(
+                versionContentToDisplay,
+                versionTitleToDisplay,
+                versionPathToDisplay
+              )}
+            </Card>
+          </Col>
+          <Col span={12}>
+            <Card
+              type="inner"
+              title={
+                <Space size={4}>
+                  {contentType === 'word' ? <FileWordOutlined /> : <FileOutlined />}
+                  Current File
+                </Space>
+              }
+              size="small"
+              style={{
+                height: 'calc(95vh - 300px)',
+                overflow: 'auto',
+                backgroundColor: themeStyles.cardBackground
+              }}
+              headStyle={{ 
+                padding: '0 8px',
+                backgroundColor: themeStyles.headerBackground
+              }}
+              bodyStyle={{ 
+                padding: '8px',
+                backgroundColor: themeStyles.cardBackground
+              }}
+              bordered
+            >
+              {renderContent(currentFileContent, 'Current File', compareData?.currentPath)}
+            </Card>
+          </Col>
+        </Row>
+      </TabPane>
+    );
+
+    // Only show diff tabs for text files
+    if (contentType === 'text') {
+      return (
+        <Tabs defaultActiveKey="sideBySide" size="small">
+          {sideBySideTab}
+          <TabPane tab={<span><DiffOutlined /> Line Diff</span>} key="lineDiff">
+            <Card
+              type="inner"
+              title={
+                <div>
+                  <span>Differences (Line by Line) - {selectedVersion ? `v${selectedVersion.versionNumber} vs Current` : 'Latest vs Current'}</span>
+                  <div style={{ float: 'right' }}>
+                    <Space>
+                      <Button 
+                        icon={<DownloadOutlined />} 
+                        size="small"
+                        onClick={() => handleDownloadFile(versionPathToDisplay)}
+                      >
+                        Download Version
+                      </Button>
+                      <Button 
+                        icon={<DownloadOutlined />} 
+                        size="small"
+                        onClick={() => handleDownloadFile(compareData?.currentPath)}
+                      >
+                        Download Current
+                      </Button>
+                    </Space>
+                  </div>
+                </div>
+              }
+              size="small"
+              style={{
+                height: 'calc(95vh - 300px)',
+                overflow: 'auto',
+                backgroundColor: themeStyles.cardBackground
+              }}
+              headStyle={{ 
+                padding: '0 8px',
+                backgroundColor: themeStyles.headerBackground
+              }}
+              bodyStyle={{ 
+                padding: '8px',
+                backgroundColor: themeStyles.cardBackground
+              }}
+              bordered
+            >
+              {renderDiff(
+                versionContentToDisplay,
+                currentFileContent
+              )}
+            </Card>
+          </TabPane>
+          <TabPane tab={<span><DiffOutlined /> Inline Diff</span>} key="inlineDiff">
+            <Card
+              type="inner"
+              title={
+                <div>
+                  <span>Differences (Inline) - {selectedVersion ? `v${selectedVersion.versionNumber} vs Current` : 'Latest vs Current'}</span>
+                  <div style={{ float: 'right' }}>
+                    <Space>
+                      <Button 
+                        icon={<DownloadOutlined />} 
+                        size="small"
+                        onClick={() => handleDownloadFile(versionPathToDisplay)}
+                      >
+                        Download Version
+                      </Button>
+                      <Button 
+                        icon={<DownloadOutlined />} 
+                        size="small"
+                        onClick={() => handleDownloadFile(compareData?.currentPath)}
+                      >
+                        Download Current
+                      </Button>
+                    </Space>
+                  </div>
+                </div>
+              }
+              size="small"
+              style={{
+                height: 'calc(95vh - 300px)',
+                overflow: 'auto',
+                backgroundColor: themeStyles.cardBackground
+              }}
+              headStyle={{ 
+                padding: '0 8px',
+                backgroundColor: themeStyles.headerBackground
+              }}
+              bodyStyle={{ 
+                padding: '8px',
+                backgroundColor: themeStyles.cardBackground
+              }}
+              bordered
+            >
+              {renderInlineDiff(
+                versionContentToDisplay,
+                currentFileContent
+              )}
+            </Card>
+          </TabPane>
+        </Tabs>
+      );
+    }
+    
+    // For word documents, images, binary files - only show side by side view
+    return (
+      <Tabs defaultActiveKey="sideBySide" size="small">
+        {sideBySideTab}
+      </Tabs>
+    );
+  };
+
   return (
     <Modal
       title={
         <Space>
-          <FileOutlined />
+          {contentType === 'word' ? <FileWordOutlined /> : <FileOutlined />}
           <span>Compare Versions - {compareData?.fileName}</span>
           {compareData?.approvalStatus && (
             <Tag color={
@@ -483,7 +767,7 @@ const CompareModal = ({
       footer={modalFooter}
     >
       {compareData ? (
-        <Spin spinning={isLoading} tip="Loading file contents...">
+        <Spin spinning={isLoading} tip={contentType === 'word' ? "Converting Word document..." : "Loading file contents..."}>
           <Row gutter={[16, 16]}>
             <Col span={6}>
               <Card
@@ -519,7 +803,21 @@ const CompareModal = ({
 
             <Col span={18}>
               <Card
-                title="File Comparison"
+                title={
+                  <Space>
+                    {contentType === 'word' ? (
+                      <>
+                        <FileWordOutlined />
+                        <span>Word Document Comparison</span>
+                      </>
+                    ) : (
+                      <>
+                        <FileOutlined />
+                        <span>File Comparison</span>
+                      </>
+                    )}
+                  </Space>
+                }
                 bordered={true}
                 size="small"
                 bodyStyle={{ 
@@ -530,173 +828,7 @@ const CompareModal = ({
                   backgroundColor: themeStyles.headerBackground
                 }}
               >
-                <Tabs defaultActiveKey="sideBySide" size="small">
-                  <TabPane tab="Side by Side" key="sideBySide">
-                    <Row gutter={[12, 0]}>
-                      <Col span={12}>
-                        <Card
-                          type="inner"
-                          title={
-                            <Space size={4}>
-                              <FileOutlined />
-                              {versionTitleToDisplay}
-                              {(selectedVersion?.approverName || compareData.allVersions?.[0]?.approverName) && (
-                                <Tooltip title={`Approved by ${selectedVersion?.approverName || compareData.allVersions[0].approverName}`}>
-                                  <Tag color="success" icon={<CheckOutlined />}>Approved</Tag>
-                                </Tooltip>
-                              )}
-                            </Space>
-                          }
-                          size="small"
-                          style={{
-                            height: 'calc(95vh - 300px)',
-                            overflow: 'auto',
-                            backgroundColor: themeStyles.cardBackground
-                          }}
-                          headStyle={{ 
-                            padding: '0 8px',
-                            backgroundColor: themeStyles.headerBackground
-                          }}
-                          bodyStyle={{ 
-                            padding: '8px',
-                            backgroundColor: themeStyles.cardBackground
-                          }}
-                          bordered
-                        >
-                          {renderContent(
-                            versionContentToDisplay,
-                            versionTitleToDisplay,
-                            versionPathToDisplay
-                          )}
-                        </Card>
-                      </Col>
-                      <Col span={12}>
-                        <Card
-                          type="inner"
-                          title={
-                            <Space size={4}>
-                              <FileOutlined />
-                              Current File
-                            </Space>
-                          }
-                          size="small"
-                          style={{
-                            height: 'calc(95vh - 300px)',
-                            overflow: 'auto',
-                            backgroundColor: themeStyles.cardBackground
-                          }}
-                          headStyle={{ 
-                            padding: '0 8px',
-                            backgroundColor: themeStyles.headerBackground
-                          }}
-                          bodyStyle={{ 
-                            padding: '8px',
-                            backgroundColor: themeStyles.cardBackground
-                          }}
-                          bordered
-                        >
-                          {renderContent(currentFileContent, 'Current File', compareData?.currentPath)}
-                        </Card>
-                      </Col>
-                    </Row>
-                  </TabPane>
-                  <TabPane tab={<span><DiffOutlined /> Line Diff</span>} key="lineDiff">
-                    <Card
-                      type="inner"
-                      title={
-                        <div>
-                          <span>Differences (Line by Line) - {selectedVersion ? `v${selectedVersion.versionNumber} vs Current` : 'Latest vs Current'}</span>
-                          <div style={{ float: 'right' }}>
-                            <Space>
-                              <Button 
-                                icon={<DownloadOutlined />} 
-                                size="small"
-                                onClick={() => handleDownloadFile(versionPathToDisplay)}
-                              >
-                                Download Version
-                              </Button>
-                              <Button 
-                                icon={<DownloadOutlined />} 
-                                size="small"
-                                onClick={() => handleDownloadFile(compareData?.currentPath)}
-                              >
-                                Download Current
-                              </Button>
-                            </Space>
-                          </div>
-                        </div>
-                      }
-                      size="small"
-                      style={{
-                        height: 'calc(95vh - 300px)',
-                        overflow: 'auto',
-                        backgroundColor: themeStyles.cardBackground
-                      }}
-                      headStyle={{ 
-                        padding: '0 8px',
-                        backgroundColor: themeStyles.headerBackground
-                      }}
-                      bodyStyle={{ 
-                        padding: '8px',
-                        backgroundColor: themeStyles.cardBackground
-                      }}
-                      bordered
-                    >
-                      {renderDiff(
-                        versionContentToDisplay,
-                        currentFileContent
-                      )}
-                    </Card>
-                  </TabPane>
-                  <TabPane tab={<span><DiffOutlined /> Inline Diff</span>} key="inlineDiff">
-                    <Card
-                      type="inner"
-                      title={
-                        <div>
-                          <span>Differences (Inline) - {selectedVersion ? `v${selectedVersion.versionNumber} vs Current` : 'Latest vs Current'}</span>
-                          <div style={{ float: 'right' }}>
-                            <Space>
-                              <Button 
-                                icon={<DownloadOutlined />} 
-                                size="small"
-                                onClick={() => handleDownloadFile(versionPathToDisplay)}
-                              >
-                                Download Version
-                              </Button>
-                              <Button 
-                                icon={<DownloadOutlined />} 
-                                size="small"
-                                onClick={() => handleDownloadFile(compareData?.currentPath)}
-                              >
-                                Download Current
-                              </Button>
-                            </Space>
-                          </div>
-                        </div>
-                      }
-                      size="small"
-                      style={{
-                        height: 'calc(95vh - 300px)',
-                        overflow: 'auto',
-                        backgroundColor: themeStyles.cardBackground
-                      }}
-                      headStyle={{ 
-                        padding: '0 8px',
-                        backgroundColor: themeStyles.headerBackground
-                      }}
-                      bodyStyle={{ 
-                        padding: '8px',
-                        backgroundColor: themeStyles.cardBackground
-                      }}
-                      bordered
-                    >
-                      {renderInlineDiff(
-                        versionContentToDisplay,
-                        currentFileContent
-                      )}
-                    </Card>
-                  </TabPane>
-                </Tabs>
+                {renderTabsBasedOnContentType()}
               </Card>
             </Col>
           </Row>

@@ -1,5 +1,5 @@
 import React, { useEffect, useContext, useState } from "react";
-import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { Layout, Menu, Typography, Avatar, Divider, Switch, Button, Tooltip, Space, Popover } from "antd";
 import {
   FileOutlined,
@@ -148,15 +148,12 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
   }
 
   // Add remaining menu items
-  menuItems.push(
-
-    {
-      key: "dashboard",
-      icon: <AppstoreOutlined />,
-      label: "Dashboard",
-      onClick: () => navigate("/dashboard")
-    }
-  );
+  menuItems.push({
+    key: "dashboard",
+    icon: <AppstoreOutlined />,
+    label: "Dashboard",
+    onClick: () => navigate("/dashboard")
+  });
 
   return (
     <Sider
@@ -190,10 +187,8 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
           src="src/media/company_logo.png"
           alt="Company Logo"
           style={{
-            height: collapsed ? "40px" : "48px",
+            height: collapsed ? "40px" : "80%",
             width: "auto",
-            height: "80%",
-            height: "80%",
             maxWidth: "100%",
             objectFit: "contain"
           }}
@@ -249,96 +244,121 @@ const AppSidebar = ({ collapsed, setCollapsed }) => {
   );
 };
 
+// Protected Route component to handle authentication
+const ProtectedRoute = ({ element }) => {
+  const { user } = useContext(AuthContext);
+  
+  // If user is not authenticated, redirect to login
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return element;
+};
+
+const AppHeader = ({ user, isDarkMode, handleLogout, toggleTheme, collapsed, setCollapsed }) => {
+  const location = useLocation();
+  const isAuthPage = ["/login", "/register"].includes(location.pathname);
+
+  return (
+    <Header style={{
+      padding: "0 16px",
+      background: '#092e5d',
+      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      color: '#ffffff',
+      position: "sticky",
+      top: 0,
+      zIndex: 1,
+      width: "100%"
+    }}>
+      {/* Left side of header */}
+      <div style={{ display: "flex", alignItems: "center" }}>
+        <div style={{
+          marginLeft: "8px",
+          color: 'rgba(255, 255, 255, 0.85)',
+          fontWeight: 500,
+          display: "flex",
+          alignItems: "center"
+        }}>
+          <span style={{
+            margin: 0,
+            color: "#ffffff",
+            fontWeight: 400,
+            fontSize: "18px"
+          }}>
+            DocHub
+          </span>
+        </div>
+      </div>
+
+      {/* Right side of header */}
+      <Space size={16}>
+        <Switch
+          checkedChildren={<BulbFilled />}
+          unCheckedChildren={<BulbOutlined />}
+          checked={isDarkMode}
+          onChange={toggleTheme}
+        />
+
+        {/* Only show user profile if logged in */}
+        {user && (
+          <UserProfile
+            user={user}
+            isDarkMode={isDarkMode}
+            handleLogout={handleLogout}
+          />
+        )}
+      </Space>
+    </Header>
+  );
+};
+
 const AppContent = () => {
   const location = useLocation();
   const { user, logout } = useContext(AuthContext);
   const { theme, toggleTheme } = useContext(ThemeContext);
   const isDarkMode = theme === 'dark';
-  const hideNavbar = ["/login", "/register"].includes(location.pathname);
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
+  const isAuthPage = ["/login", "/register"].includes(location.pathname);
 
   const handleLogout = () => {
     logout();
     navigate("/login");
   };
 
-  // Format the current path
-  const currentPath = location.pathname === "/"
-    ? "Files"
-    : location.pathname.slice(1).charAt(0).toUpperCase() + location.pathname.slice(2);
+  // Redirect to login if not logged in and not already on login/register page
+  useEffect(() => {
+    if (!user && !isAuthPage) {
+      navigate('/login');
+    }
+  }, [user, isAuthPage, navigate]);
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      {!hideNavbar && user && (
+      {/* Show sidebar only for logged in users and not on auth pages */}
+      {user && !isAuthPage && (
         <AppSidebar collapsed={collapsed} setCollapsed={setCollapsed} />
       )}
 
       <Layout style={{
-        marginLeft: !hideNavbar && user ? (collapsed ? 80 : 220) : 0,
+        marginLeft: user && !isAuthPage ? (collapsed ? 80 : 220) : 0,
         transition: 'all 0.2s',
         backgroundColor: isDarkMode ? '#161617' : '#f0f2f5'
       }}>
-        {!hideNavbar && user && (
-          <Header style={{
-            padding: "0 16px",
-            background: '#092e5d',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            color: '#ffffff',
-            position: "sticky",
-            top: 0,
-            zIndex: 1,
-            width: "100%"
-          }}>
-            {/* Left side of header */}
-            <div style={{ display: "flex", alignItems: "center" }}>
-              {/* Removed the toggle button from here since it's now in the sidebar */}
-
-              <div style={{
-                marginLeft: "8px",
-                color: 'rgba(255, 255, 255, 0.85)',
-                fontWeight: 500,
-                display: "flex",
-                alignItems: "center"
-              }}>
-                {/* DocHub Name with simpler styling */}
-                <span style={{
-                  margin: 0,
-                  color: "#ffffff",
-                  fontWeight: 400,
-                  fontSize: "18px"
-                }}>
-                  DocHub
-                </span>
-
-                {/* <span style={{ margin: "0 12px", opacity: 0.6 }}>|</span> */}
-                {/* <HomeOutlined style={{ marginRight: "8px" }} /> */}
-                {/* {currentPath} */}
-              </div>
-            </div>
-
-            {/* Right side of header - User Profile & Dark Mode Toggle */}
-            <Space size={16}>
-              <Switch
-                checkedChildren={<BulbFilled />}
-                unCheckedChildren={<BulbOutlined />}
-                checked={isDarkMode}
-                onChange={toggleTheme}
-              />
-
-              {/* New UserProfile Component */}
-              <UserProfile
-                user={user}
-                isDarkMode={isDarkMode}
-                handleLogout={handleLogout}
-              />
-            </Space>
-          </Header>
-        )}
+        {/* Always show header */}
+        <AppHeader 
+          user={user} 
+          isDarkMode={isDarkMode} 
+          handleLogout={handleLogout} 
+          toggleTheme={toggleTheme}
+          collapsed={collapsed}
+          setCollapsed={setCollapsed}
+        />
 
         <Content style={{
           padding: 16,
@@ -346,14 +366,16 @@ const AppContent = () => {
           backgroundColor: isDarkMode ? '#202021' : '#ffffff'
         }}>
           <Routes>
-            <Route path="/" element={<FileManager />} />
-            {/* <Route path="/compare" element={<FileComparison />} /> */}
+            <Route path="/" element={<ProtectedRoute element={<FileManager />} />} />
+            <Route path="/approvals" element={<ProtectedRoute element={<PendingApprovals userId={user?.id} />} />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/approvals" element={<PendingApprovals userId={user?.id} />} />
+            {/* Catch-all redirect to login */}
+            <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </Content>
 
+        {/* Always show footer */}
         <AppFooter />
       </Layout>
     </Layout>

@@ -214,12 +214,9 @@ const VersionsList = ({ versions, onVersionClick, contentData, openFileContent, 
               }}
               onClick={(e) => {
                 e.stopPropagation();
-                // Use the path property that actually exists on the version object
                 const path = version.path || version.filePath;
                 if (path) {
-                  // Get filename to display
                   const fileName = getFileName(version);
-                  // Pass the filename and path to the openFileContent function
                   openFileContent(fileName, path);
                 } else {
                   message.error("File path not found for this version");

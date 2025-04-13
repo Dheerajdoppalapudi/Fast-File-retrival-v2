@@ -50,9 +50,10 @@ const PendingApprovals = () => {
         headers: { Authorization: `Bearer ${user?.token}` },
       });
 
+      // Use consistent key prop - fixed here
       const formattedApprovals = response.data.approvals.map(approval => ({
         ...approval,
-        key: approval.id, // Adding a key for better React performance
+        key: approval.id.toString(), // Ensure the key is a string
         hasVersions: approval.versions && approval.versions.length > 0,
       }));
 
@@ -72,9 +73,10 @@ const PendingApprovals = () => {
         headers: { Authorization: `Bearer ${user?.token}` },
       });
 
+      // Use consistent key prop - fixed here
       const formattedHistory = response.data.approvals.map(approval => ({
         ...approval,
-        key: approval.id,
+        key: approval.id.toString(), // Ensure the key is a string
       }));
 
       setApprovedHistory(formattedHistory);
@@ -604,11 +606,11 @@ const PendingApprovals = () => {
             <Table
               columns={pendingColumns}
               dataSource={approvals}
-              rowKey="id"
+              rowKey="key" // Fixed: Use the key property we've set consistently
               pagination={{
-                pageSize: 8,
+                defaultPageSize: 8,
                 showSizeChanger: true,
-                pageSizeOptions: ['8', '16', '32'],
+                pageSizeOptions: [8, 16, 32], // Numbers, not strings
                 showTotal: (total) => `Total ${total} items`
               }}
               bordered={false}
@@ -658,11 +660,11 @@ const PendingApprovals = () => {
             <Table
               columns={historyColumns}
               dataSource={approvedHistory}
-              rowKey="id"
+              rowKey="key" // Fixed: Use the key property we've set consistently
               pagination={{
-                pageSize: 8,
+                defaultPageSize: 8,
                 showSizeChanger: true,
-                pageSizeOptions: ['8', '16', '32'],
+                pageSizeOptions: [8, 16, 32], // Numbers, not strings
                 showTotal: (total) => `Total ${total} items`
               }}
               bordered={false}
@@ -766,7 +768,7 @@ const PendingApprovals = () => {
                 <Table
                   size="small"
                   pagination={false}
-                  dataSource={selectedFile.versions.map(v => ({ ...v, key: v.id }))}
+                  dataSource={selectedFile.versions.map(v => ({ ...v, key: v.id.toString() }))} // Fixed: Ensure consistent keys here too
                   columns={[
                     {
                       title: "Version",

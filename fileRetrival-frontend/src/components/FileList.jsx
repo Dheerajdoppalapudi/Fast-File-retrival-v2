@@ -195,7 +195,7 @@ const FileList = ({ files, onNavigate, onVersionClick, onFileDeleted, isDarkMode
       .catch(() => message.error("Failed to copy content"));
   };
 
-  const handleDownload = () => {
+  const handleDownload = (path) => {
     window.open(`http://localhost:8000/files/download?path=${encodeURIComponent(currentFile)}`, '_blank');
   };
 
